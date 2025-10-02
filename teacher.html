@@ -518,6 +518,7 @@
       const previewCanvas = document.createElement('canvas');
       previewCanvas.width = 400;
       previewCanvas.height = 300;
+      previewCanvas.className = 'absolute inset-0 h-full w-full';
       const previewCtx = previewCanvas.getContext('2d');
       previewCtx.fillStyle = '#ffffff';
       previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -529,7 +530,7 @@
           <h3 class="text-lg font-semibold text-slate-900">${username}</h3>
           <span class="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">Live</span>
         </div>
-        <div class="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+        <div class="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner" style="aspect-ratio:4/3;">
           <canvas class="absolute inset-0 h-full w-full" width="400" height="300"></canvas>
         </div>
         <button type="button" class="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-200">Open canvas</button>
@@ -578,9 +579,19 @@
       }
 
       student.previewCtx.clearRect(0, 0, student.previewCanvas.width, student.previewCanvas.height);
-      student.previewCtx.drawImage(student.canvas, 0, 0, student.previewCanvas.width, student.previewCanvas.height);
+      // Letterbox-fit draw to preserve full canvas without cropping
+      const dstW = student.previewCanvas.width;
+      const dstH = student.previewCanvas.height;
+      const srcW = 800, srcH = 600;
+      const scale = Math.min(dstW / srcW, dstH / srcH);
+      const drawW = srcW * scale;
+      const drawH = srcH * scale;
+      const dx = Math.round((dstW - drawW) / 2);
+      const dy = Math.round((dstH - drawH) / 2);
+      student.previewCtx.drawImage(student.canvas, 0, 0, srcW, srcH, dx, dy, drawW, drawH);
       student.previewCtx.save();
-      student.previewCtx.scale(student.previewCanvas.width / 800, student.previewCanvas.height / 600);
+      student.previewCtx.translate(dx, dy);
+      student.previewCtx.scale(scale, scale);
       student.annotations.forEach(stroke => {
         if (stroke) drawSmoothStrokePath(student.previewCtx, stroke.points, stroke.color, stroke.size);
       });
@@ -1096,6 +1107,13 @@
       startSessionBtn.disabled = true;
       startSessionBtn.textContent = 'Session live';
       setStatus('connecting', 'Connecting…');
+
+      // When the teacher leaves this page, clear all student canvases
+      const sendClearAll = () => {
+        try { channel?.send({ type:'broadcast', event:'teacher_clear_all', payload:{} }); } catch {}
+      };
+      window.addEventListener('pagehide', sendClearAll);
+      window.addEventListener('beforeunload', sendClearAll);
     }
 
     startSession();

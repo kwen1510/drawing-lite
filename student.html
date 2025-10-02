@@ -946,6 +946,16 @@
         updateHistoryButtons();
         saveToSession();
       });
+
+      // Teacher ended the session: clear everything for this student
+      ch.on('broadcast', { event: 'teacher_clear_all' }, () => {
+        state.strokes = [];
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        renderAll();
+        updateHistoryButtons();
+        saveToSession();
+      });
     }
 
     async function setupSupabase() {
