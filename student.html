@@ -63,6 +63,9 @@
       background: #ef4444;
       box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.25);
     }
+    canvas {
+      touch-action: none; /* crucial for iPad drawing */
+    }
   </style>
 </head>
   <body class="bg-gradient-to-br from-emerald-100 via-white to-slate-100 flex items-center justify-center p-4">
@@ -93,7 +96,7 @@
           placeholder="Session code (e.g., ABC123)"
           maxlength="10"
           required
-          value="TEST123"
+          value=""
           class="mt-2 w-full rounded-2xl border-2 border-slate-200 px-4 py-3 text-base font-medium uppercase tracking-[0.3em] text-slate-800 shadow-sm transition focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-200"
         />
       </div>
@@ -268,6 +271,22 @@
     ];
 
     canvas.style.touchAction = 'none';
+
+    // Prefill session from ?session=CODE in URL
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qp = (params.get('session') || '').trim();
+      if (qp) {
+        sessionInput.value = qp.toUpperCase();
+      }
+    } catch {}
+
+    /* ----------------- Pointer filtering for stylus mode ----------------- */
+    function supportedPointer(e) {
+      const t = (e.pointerType || '').toLowerCase();
+      if (stylusOnly) return t === '' || t === 'pen';
+      return t === '' || t === 'pen' || t === 'mouse' || t === 'touch';
+    }
 
     /* ----------------- Canvas / DPR ----------------- */
     const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
@@ -725,7 +744,7 @@
     }
 
     function startStroke(e) {
-      if (stylusOnly && e.pointerType && e.pointerType !== 'pen') return;
+      if (!supportedPointer(e)) return;
       e.preventDefault();
       state.pointerId = e.pointerId ?? null;
       state.drawing = true;
@@ -756,6 +775,7 @@
     function moveStroke(e) {
       if (!state.drawing) return;
       if (state.pointerId != null && e.pointerId != null && e.pointerId !== state.pointerId) return;
+      if (!supportedPointer(e)) return;
       e.preventDefault();
       const pt = getCanvasPoint(e);
 
@@ -856,6 +876,11 @@
     canvas.addEventListener('pointerup', endStroke, { passive: false });
     canvas.addEventListener('pointercancel', cancelStroke, { passive: false });
     canvas.addEventListener('pointerleave', cancelStroke, { passive: false });
+
+    // Prevent iPad gestures interfering with drawing
+    ['touchstart', 'touchmove', 'gesturestart'].forEach(ev => {
+      canvas.addEventListener(ev, e => { e.preventDefault(); }, { passive: false });
+    });
 
     /* ----------------- Supabase wiring ----------------- */
     function wireTeacherEvents(ch) {
