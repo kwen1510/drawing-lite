@@ -225,7 +225,7 @@
 
   function supportedPointer(e){
     const t = (e.pointerType||'').toLowerCase();
-    if(tool.stylusOnly) return t==='' || t==='pen' || t==='mouse';
+    if(tool.stylusOnly) return t==='' || t==='pen';
     return t==='' || t==='pen' || t==='mouse' || t==='touch';
   }
 
