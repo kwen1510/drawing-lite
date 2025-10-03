@@ -357,10 +357,38 @@
     let username = '';
     let sessionCode = '';
 
-    let currentColor = COLOR_PRESETS[0].value;
-    let currentTool = 'pen';
-    let brushSize = 3;
-    let stylusOnly = true;
+    // Persist student drawing preferences
+    function loadStudentPrefs(){
+      try {
+        const saved = localStorage.getItem('student_prefs');
+        console.log('[LOAD] Raw localStorage value:', saved);
+        if (!saved) {
+          console.log('[LOAD] No saved prefs, using defaults');
+          return { color: COLOR_PRESETS[0].value, tool: 'pen', brush: 3, stylusOnly: true, toolbarOnLeft: true };
+        }
+        const parsed = JSON.parse(saved);
+        console.log('[LOAD] Loaded preferences:', parsed);
+        return parsed;
+      } catch (e) { 
+        console.error('[LOAD] Error loading prefs:', e);
+        return { color: COLOR_PRESETS[0].value, tool: 'pen', brush: 3, stylusOnly: true, toolbarOnLeft: true }; 
+      }
+    }
+    function saveStudentPrefs(prefs){
+      try { 
+        console.log('[SAVE] Saving preferences:', prefs);
+        localStorage.setItem('student_prefs', JSON.stringify(prefs)); 
+        console.log('[SAVE] Saved successfully to localStorage');
+      } catch (e) {
+        console.error('[SAVE] Error saving prefs:', e);
+      }
+    }
+    const prefs = loadStudentPrefs();
+    let currentColor = prefs.color;
+    let currentTool = prefs.tool;
+    let brushSize = prefs.brush;
+    let stylusOnly = prefs.stylusOnly;
+    console.log('[INIT] Initial state:', { currentColor, currentTool, brushSize, stylusOnly });
 
     const state = {
       drawing: false,
@@ -406,7 +434,9 @@
         btn.style.background = preset.value;
         btn.addEventListener('click', () => {
           currentColor = preset.value;
+          console.log('[UI] Color changed to:', currentColor);
           updateColorSelection();
+          saveStudentPrefs({ color: currentColor, tool: currentTool, brush: brushSize, stylusOnly, toolbarOnLeft });
           if (currentTool === 'eraser') {
             currentTool = 'pen';
             updateToolButtons();
@@ -417,27 +447,42 @@
       updateColorSelection();
     }
     renderColorButtons();
+    console.log('[UI] Applying color selection, current color:', currentColor);
+    
     function updateToolButtons() {
       toolBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.tool === currentTool));
     }
     toolBtns.forEach(btn => btn.addEventListener('click', () => {
       currentTool = btn.dataset.tool;
+      console.log('[UI] Tool changed to:', currentTool);
       updateToolButtons();
+      saveStudentPrefs({ color: currentColor, tool: currentTool, brush: brushSize, stylusOnly, toolbarOnLeft });
     }));
     updateToolButtons();
+    console.log('[UI] Applying tool buttons, current tool:', currentTool);
 
+    brushSizeInput.value = brushSize;
+    sizeDisplay.textContent = brushSize;
+    console.log('[UI] Applied brush size:', brushSize);
     brushSizeInput.addEventListener('input', e => {
       brushSize = parseInt(e.target.value, 10);
       sizeDisplay.textContent = brushSize;
+      console.log('[UI] Brush size changed to:', brushSize);
+      saveStudentPrefs({ color: currentColor, tool: currentTool, brush: brushSize, stylusOnly, toolbarOnLeft });
     });
 
+    stylusToggle.classList.toggle('off', !stylusOnly);
+    stylusToggle.textContent = stylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
+    console.log('[UI] Applied stylus mode:', stylusOnly, '- Button text:', stylusToggle.textContent);
     stylusToggle.addEventListener('click', () => {
       stylusOnly = !stylusOnly;
       stylusToggle.classList.toggle('off', !stylusOnly);
       stylusToggle.textContent = stylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
+      console.log('[UI] Stylus mode toggled to:', stylusOnly);
+      saveStudentPrefs({ color: currentColor, tool: currentTool, brush: brushSize, stylusOnly, toolbarOnLeft });
     });
 
-    let toolbarOnLeft = true;
+    let toolbarOnLeft = prefs.toolbarOnLeft;
     function updateToolbarPosition() {
       if (toolbarOnLeft) {
         workspace.classList.remove('flex-row-reverse');
@@ -448,11 +493,14 @@
         swapToolbarBtn.textContent = 'Move toolbar to left';
         swapToolbarBtn.setAttribute('aria-pressed', 'true');
       }
+      console.log('[UI] Toolbar position updated. Left side:', toolbarOnLeft);
       requestAnimationFrame(fitCanvasToStage);
     }
     swapToolbarBtn.addEventListener('click', () => {
       toolbarOnLeft = !toolbarOnLeft;
+      console.log('[UI] Toolbar position toggled to left:', toolbarOnLeft);
       updateToolbarPosition();
+      saveStudentPrefs({ color: currentColor, tool: currentTool, brush: brushSize, stylusOnly, toolbarOnLeft });
     });
     updateToolbarPosition();
 
