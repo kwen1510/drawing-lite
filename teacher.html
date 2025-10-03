@@ -1137,9 +1137,8 @@ function markAnnotated(student){
         id: `${Date.now()}-teacher-${Math.random().toString(16).slice(2)}`,
         color: teacherCurrentColor,
         size: teacherBrush,
-        points: []
+        points: [point]
       };
-      appendSamples(activeAnnotationStroke.points, [point]);
       redrawAnnotationOverlay(activeAnnotationStroke.points);
     }
 
@@ -1244,61 +1243,98 @@ function markAnnotated(student){
       }
     }
 
-    overlay.addEventListener('pointerdown', (ev) => {
+    let annotationDrawing = false;
+    
+    function startAnnotation(e) {
       if (!currentStudent) return;
-      if (!supportedPointer(ev)) return;
-      ev.preventDefault();
-      annotationPointerId = ev.pointerId;
-      overlay.setPointerCapture(annotationPointerId);
-      const point = getOverlayPoint(ev);
+      if (!supportedPointer(e)) return;
+      e.preventDefault();
+      annotationPointerId = e.pointerId ?? null;
+      annotationDrawing = true;
+      if (annotationPointerId != null) {
+        try { overlay.setPointerCapture(annotationPointerId); } catch {}
+      }
+      const point = getOverlayPoint(e);
+      
       if (teacherCurrentTool === 'eraser') {
         beginTeacherErase(point);
         return;
       }
+      
       beginAnnotationStroke(point);
-    });
+    }
 
-    function handleOverlayPointerMove(ev) {
-      if (ev.pointerId !== annotationPointerId) return;
-      if (!supportedPointer(ev)) return;
-      if (teacherCurrentTool === 'eraser') {
-        ev.preventDefault();
-        continueTeacherErase(ev);
+    function moveAnnotation(e) {
+      if (!annotationDrawing) return;
+      if (annotationPointerId != null && e.pointerId != null && e.pointerId !== annotationPointerId) return;
+      if (!supportedPointer(e)) return;
+      e.preventDefault();
+      // Do not draw if primary button is not pressed (prevents trailing lines after a click)
+      const t = (e.pointerType || '').toLowerCase();
+      if ((t === 'mouse' && e.buttons === 0) || (t === 'pen' && (e.pressure === 0 || e.buttons === 0))) {
         return;
       }
+      const point = getOverlayPoint(e);
+      
+      if (teacherCurrentTool === 'eraser') {
+        continueTeacherErase(e);
+        return;
+      }
+      
       if (!activeAnnotationStroke) return;
-      ev.preventDefault();
-      const samples = getOverlaySamples(ev);
-      if (!samples.length) return;
-      appendSamples(activeAnnotationStroke.points, samples);
+      activeAnnotationStroke.points.push(point);
       redrawAnnotationOverlay(activeAnnotationStroke.points);
     }
 
-    if (usePointerRawUpdate) {
-      overlay.addEventListener('pointerrawupdate', handleOverlayPointerMove);
-    } else {
-      overlay.addEventListener('pointermove', handleOverlayPointerMove);
-    }
-
-    function finalizeOverlayPointer(ev) {
-      if (ev.pointerId !== annotationPointerId) return;
+    function endAnnotation(e) {
+      if (!annotationDrawing) return;
+      if (annotationPointerId != null && e.pointerId != null && e.pointerId !== annotationPointerId) return;
+      e.preventDefault();
+      if (annotationPointerId != null) {
+        try { overlay.releasePointerCapture(annotationPointerId); } catch {}
+      }
+      
       if (teacherCurrentTool === 'eraser') {
         endTeacherErase();
-        try { overlay.releasePointerCapture(ev.pointerId); } catch {}
+        teacherErasing = false;
+        annotationDrawing = false;
         annotationPointerId = null;
         return;
       }
+      
       if (activeAnnotationStroke) {
         commitAnnotationStroke(activeAnnotationStroke);
       }
       activeAnnotationStroke = null;
+      annotationDrawing = false;
       annotationPointerId = null;
-      try { overlay.releasePointerCapture(ev.pointerId); } catch {}
+    }
+    
+    function cancelAnnotation(e) {
+      if (!annotationDrawing) return;
+      if (annotationPointerId != null && e.pointerId != null && e.pointerId !== annotationPointerId) return;
+      e.preventDefault();
+      if (annotationPointerId != null) {
+        try { overlay.releasePointerCapture(annotationPointerId); } catch {}
+      }
+      
+      if (teacherCurrentTool === 'eraser') {
+        endTeacherErase();
+        teacherErasing = false;
+      } else if (activeAnnotationStroke) {
+        activeAnnotationStroke = null;
+        redrawAnnotationOverlay();
+      }
+      
+      annotationDrawing = false;
+      annotationPointerId = null;
     }
 
-    overlay.addEventListener('pointerup', finalizeOverlayPointer);
-    overlay.addEventListener('pointerleave', finalizeOverlayPointer);
-    overlay.addEventListener('pointercancel', finalizeOverlayPointer);
+    overlay.addEventListener('pointerdown', startAnnotation, { passive: false });
+    overlay.addEventListener('pointermove', moveAnnotation, { passive: false });
+    overlay.addEventListener('pointerup', endAnnotation, { passive: false });
+    overlay.addEventListener('pointercancel', cancelAnnotation, { passive: false });
+    overlay.addEventListener('pointerleave', cancelAnnotation, { passive: false });
 
     // Prevent iPad gestures interfering with drawing
     ['touchstart', 'touchmove', 'gesturestart'].forEach(ev => {
