@@ -142,6 +142,14 @@
         >
           Move toolbar to right
         </button>
+        <button
+          id="logoutBtn"
+          type="button"
+          class="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-600 shadow-sm transition hover:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-200"
+          title="Log out to change your name"
+        >
+          Logout
+        </button>
       </div>
     </div>
 
@@ -260,9 +268,18 @@
     const swapToolbarBtn = document.getElementById('swapToolbarBtn');
     const workspace = document.getElementById('workspace');
     const stage = document.getElementById('stage');
+    const logoutBtn = document.getElementById('logoutBtn');
     const templateImg = new Image();
     let templateActive = false;
     let templateFit = 0.9; // default; hanzi will increase
+    // Ask-for-refresh confirmation only after login
+    let shouldConfirmLeave = false;
+    window.addEventListener('beforeunload', (e) => {
+      if (!shouldConfirmLeave) return;
+      e.preventDefault();
+      e.returnValue = 'Are you sure you want to leave? Your drawing will be cleared.';
+      return e.returnValue;
+    });
 
     const CANVAS_WIDTH = 800;
     const CANVAS_HEIGHT = 600;
@@ -281,6 +298,14 @@
       const qp = (params.get('session') || '').trim();
       if (qp) {
         sessionInput.value = qp.toUpperCase();
+      }
+    } catch {}
+
+    // Prefill username from localStorage if present
+    try {
+      const savedName = (localStorage.getItem('student_username') || '').trim();
+      if (savedName) {
+        usernameInput.value = savedName;
       }
     } catch {}
 
@@ -430,6 +455,16 @@
       updateToolbarPosition();
     });
     updateToolbarPosition();
+
+    // Logout button clears saved name and reloads to show login
+    logoutBtn?.addEventListener('click', () => {
+      if (confirm('Log out and allow changing your name?')) {
+        try { localStorage.removeItem('student_username'); } catch {}
+        // Optionally clear drawing for this username on this device
+        // We reload to reset state and show the login form again
+        location.reload();
+      }
+    });
 
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
@@ -917,6 +952,24 @@
 
     /* ----------------- Supabase wiring ----------------- */
     function wireTeacherEvents(ch) {
+      // Teacher ends session: kick student back to login screen
+      ch.on('broadcast', { event: 'teacher_end_session' }, () => {
+        // Clear local drawing state and any stored snapshot
+        state.strokes = [];
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        templateActive = false;
+        templateImg.src = '';
+        try { sessionStorage.removeItem('student_drawing_' + username); } catch {}
+        renderAll();
+        updateHistoryButtons();
+
+        // Disconnect and return to login
+        try { channel?.unsubscribe(); } catch {}
+        appContainer.classList.add('hidden');
+        loginForm.classList.remove('hidden');
+        setStatus('connecting', 'Session ended by teacher');
+      });
       ch.on('broadcast', { event: 'teacher_stroke_end' }, ({ payload }) => {
         if (payload.target !== username) return;
         const s = payload.stroke;
@@ -979,6 +1032,18 @@
         updateHistoryButtons();
         saveToSession();
       });
+      // Teacher sends next question: clear everything locally (students & teacher strokes)
+      ch.on('broadcast', { event: 'teacher_clear_all' }, () => {
+        state.strokes = [];
+        state.undoStack.length = 0;
+        state.redoStack.length = 0;
+        // Also clear any template
+        templateActive = false;
+        templateImg.src = '';
+        renderAll(); 
+        updateHistoryButtons(); 
+        saveToSession();
+      });
 
       // Receive template commands
       ch.on('broadcast', { event: 'teacher_template' }, ({ payload }) => {
@@ -990,24 +1055,16 @@
           renderAll();
           return;
         }
-        const src = payload?.src;
+        const src = payload?.src; // may be a blob URL or data URI
         if (!src) return;
         templateImg.onload = () => { templateActive = true; renderAll(); };
         templateImg.onerror = () => { templateActive = false; };
         templateImg.crossOrigin = 'anonymous';
         templateImg.src = src;
-        // adjust fit depending on type
-        if (kind === 'hanzi') templateFit = 0.96; else templateFit = 0.9;
-      });
-
-      // Teacher ended the session: clear everything for this student
-      ch.on('broadcast', { event: 'teacher_clear_all' }, () => {
-        state.strokes = [];
-        state.undoStack.length = 0;
-        state.redoStack.length = 0;
-        renderAll();
-        updateHistoryButtons();
-        saveToSession();
+        // adjust fit depending on type; for graphs use 0.9 to keep margin
+        if (kind === 'hanzi') templateFit = 0.96;
+        else if (kind.startsWith('graph')) templateFit = 0.9;
+        else templateFit = 0.96;
       });
     }
 
@@ -1029,6 +1086,20 @@
           setStatus('error', 'Connection error');
         }
       });
+
+      // Notify teacher on hard refresh/close that this student is leaving
+      const sendLeavingAndClear = () => {
+        try { channel?.send({ type:'broadcast', event:'student_leaving', payload:{ username } }); } catch {}
+        // Clear any saved drawing snapshot so refresh starts clean
+        try { if (username) sessionStorage.removeItem('student_drawing_' + username); } catch {}
+      };
+      // Ask before unloading, and if user proceeds the pagehide event will clear data
+      window.addEventListener('beforeunload', (e) => {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      });
+      window.addEventListener('pagehide', sendLeavingAndClear);
     }
 
     /* ----------------- Login ----------------- */
@@ -1039,6 +1110,9 @@
         alert('Please enter both name and session code');
         return;
       }
+      shouldConfirmLeave = true;
+      // Persist username for next visit
+      try { localStorage.setItem('student_username', username); } catch {}
       loginForm.classList.add('hidden');
       appContainer.classList.remove('hidden');
       requestAnimationFrame(() => {

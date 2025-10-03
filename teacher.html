@@ -36,6 +36,36 @@
     canvas {
       touch-action: none; /* crucial for iPad drawing */
     }
+    /* Selection states in the question panel */
+    #questionPanel .is-active{
+      background: rgb(59 130 246);
+      color: #fff;
+      border-color: rgb(59 130 246);
+      box-shadow: 0 10px 25px rgba(59,130,246,0.25);
+    }
+    /* Toast: glassy, opaque feel using gradients + borders */
+    #toast{
+      position:fixed; right:20px; bottom:20px;
+      color:#fff;
+      padding:12px 16px; border-radius:14px; font-size:13px; font-weight:700;
+      background: linear-gradient(135deg, rgba(15,23,42,0.75), rgba(15,23,42,0.6));
+      border: 1px solid rgba(255,255,255,0.25);
+      box-shadow: 0 18px 50px rgba(2,6,23,0.35), inset 0 0 0 1px rgba(255,255,255,0.08);
+      opacity:0; transform:translateY(10px) scale(.98);
+      transition:opacity .2s ease, transform .2s ease, background .2s ease;
+      z-index:9999; backdrop-filter: blur(8px) saturate(140%);
+    }
+    #toast.is-visible{opacity:1; transform:translateY(0) scale(1)}
+    #toast.toast-warn{background: linear-gradient(135deg, rgba(180,83,9,0.82), rgba(180,83,9,0.66));}
+    #toast.toast-success{background: linear-gradient(135deg, rgba(5,150,105,0.82), rgba(5,150,105,0.66));}
+
+    /* Focus ring for accessibility */
+    button:focus-visible, select:focus-visible, input:focus-visible{
+      outline: 3px solid #93c5fd; outline-offset: 2px;
+    }
+
+    /* Student card activity pulse */
+    .card-hot{ box-shadow: 0 0 0 3px rgba(16,185,129,0.35), 0 18px 40px rgba(16,185,129,0.18) !important; }
   </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-sky-100 via-white to-slate-100 p-6 text-slate-700">
@@ -56,13 +86,7 @@
               value=""
               class="w-32 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-slate-700 shadow-inner focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100"
             />
-            <button
-              id="generateCodeBtn"
-              type="button"
-              class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100"
-            >
-              Generate code
-            </button>
+            <!-- Generate code removed per request -->
             <button
               id="startSessionBtn"
               type="button"
@@ -78,60 +102,104 @@
             Not connected
           </div>
         </div>
-        <div class="flex items-center gap-2 pt-2">
-          <span class="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">Template</span>
-          <button id="headerHanziBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Hanzi box</button>
-          <button id="headerGraphCornerBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (corner)</button>
-          <button id="headerGraphCrossBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (cross)</button>
-          <button id="headerTplClearBtn" class="rounded-lg bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-600 shadow-sm transition hover:bg-rose-200">Remove</button>
-        </div>
+        
       </div>
       <div
         id="sessionInfo"
-        class="mt-5 hidden items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm font-semibold text-emerald-700"
+        class="mt-5 hidden rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50/90 to-teal-50/90 p-4 shadow-lg backdrop-blur-sm"
       >
-        <div class="flex items-center gap-4">
-          <span>Session <span id="sessionCode" class="font-bold text-emerald-600"></span></span>
-          <span><span id="studentCount" class="text-lg font-bold text-slate-900">0</span> students online</span>
-        </div>
-        <div class="flex items-center gap-4">
-          <div class="flex flex-col items-center gap-2">
-            <div id="qrCode" class="rounded-lg border border-emerald-200 bg-white p-2"></div>
-            <p class="text-xs text-emerald-600 font-medium">Students can scan to join</p>
-          </div>
-          <div class="flex-1">
-            <p class="text-xs text-emerald-600 mb-2">Join URL:</p>
+        <!-- Top Row: Session info -->
+        <div class="flex items-center justify-between border-b border-emerald-200/50 pb-3">
+          <div class="flex items-center gap-4">
+            <span class="text-sm font-semibold text-emerald-900">Session <span id="sessionCode" class="rounded-md bg-emerald-600 px-2 py-0.5 text-white font-bold tracking-wider"></span></span>
             <div class="flex items-center gap-2">
-              <input
-                id="joinUrl"
-                type="text"
-                readonly
-                class="flex-1 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-mono text-slate-700 focus:outline-none"
-              />
-              <button
-                id="copyUrlBtn"
-                type="button"
-                class="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-600"
-              >
-                Copy
-              </button>
+              <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
+              <span id="studentCount" class="text-2xl font-bold text-slate-900">0</span>
+              <span class="text-sm font-medium text-slate-600">online</span>
             </div>
           </div>
+          <div class="flex items-center gap-3">
+            <button
+              id="copyUrlBtn"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              Copy URL
+            </button>
+            <div id="qrCode" class="rounded-lg border-2 border-white bg-white p-1.5 shadow-md"></div>
+          </div>
+        </div>
+        <!-- Bottom Row: Controls -->
+        <div class="mt-3 flex items-center gap-3">
+          <input id="joinUrl" type="text" readonly class="hidden" />
+          <input id="studentFilter" type="text" placeholder="Filter students" class="flex-1 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200" />
+          <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-white">
+            <input id="hideNamesToggle" type="checkbox" class="accent-emerald-600" />
+            <span>Hide names</span>
+          </label>
+          <label class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700">
+            <span>Cards/row:</span>
+            <select id="gridColumnsSelect" class="rounded border-none bg-transparent font-bold text-emerald-700 focus:outline-none focus:ring-0">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <!-- Question preparation panel -->
+      <div id="questionPanel" class="mt-4 hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 p-4 shadow-lg backdrop-blur-sm">
+        <div class="flex items-center gap-3 border-b border-blue-200/50 pb-3">
+          <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span class="text-sm font-bold text-blue-900">Prepare Next Question</span>
+          <span id="stagedBadge" class="hidden ml-auto rounded-full bg-blue-600 px-2.5 py-1 text-[10px] font-bold text-white shadow-sm"></span>
+          <div class="ml-auto flex items-center gap-2">
+          <button id="sendQuestionBtn" class="rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-1.5 text-xs font-bold text-white shadow-md transition hover:from-blue-500 hover:to-blue-400 disabled:opacity-40 disabled:cursor-not-allowed">
+            Send to class
+          </button>
+          </div>
+        </div>
+        <p id="sendHint" class="mt-2 hidden rounded-lg bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-700">Choose a template or image before sending.</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button data-mode="blank" id="modeBlank" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 is-active">Blank canvas</button>
+          <button data-mode="tpl" id="modeTpl" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Templates</button>
+          <button data-mode="image" id="modeImg" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Send image</button>
+        </div>
+        <div id="tplControls" class="mt-3 hidden">
+          <div class="flex items-center gap-2">
+            <button id="prepHanzi" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Hanzi box</button>
+            <button id="prepGraphCorner" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (corner)</button>
+            <button id="prepGraphCross" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (cross)</button>
+          </div>
+        </div>
+        <div id="imgControls" class="mt-3 hidden">
+          <div class="flex items-center gap-2">
+            <button id="prepPickImg" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Choose image…</button>
+            <span id="prepImgName" class="text-[11px] text-slate-500"></span>
+            <input id="prepImgInput" type="file" accept="image/*" class="hidden" />
+          </div>
+        </div>
+        <div id="nextPreviewWrap" class="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+          <canvas id="nextPreview" width="160" height="120" class="block" style="width:160px;height:120px"></canvas>
+          <span class="text-[11px] text-slate-500">Tiny preview (local only)</span>
         </div>
       </div>
     </header>
 
     <div
       id="emptyState"
-      class="flex flex-1 flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-300 bg-white/70 p-12 text-center text-slate-500"
+      class="flex flex-1 flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-emerald-300 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 p-16 text-center backdrop-blur-sm"
     >
-      <h2 class="text-xl font-semibold text-slate-700">Waiting for students</h2>
-      <p class="mt-2 max-w-sm text-sm text-slate-500">
-        Share the session code so learners can join and draw in real time.
+      <svg class="h-16 w-16 text-emerald-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+      <h2 class="text-2xl font-bold text-slate-800">Waiting for students to join...</h2>
+      <p class="mt-3 max-w-md text-sm leading-relaxed text-slate-600">
+        Share the <strong class="rounded bg-emerald-600 px-1.5 py-0.5 text-xs font-bold text-white">session code</strong> or <strong class="font-semibold text-emerald-700">QR code</strong> shown above. Students will appear here once they connect.
       </p>
     </div>
 
-    <div id="students" class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"></div>
+    <div id="students" class="grid gap-5" style="grid-template-columns: repeat(3, minmax(0, 1fr));"></div>
   </div>
 
   <div
@@ -261,6 +329,10 @@
       </div>
     </div>
   </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="reconnectBar" class="hidden fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-2 text-sm font-semibold z-[10000] shadow-lg">
+    Reconnecting...
+  </div>
 
   <script>
     window.SUPABASE_URL = "https://eytswszeopdxmtxxbkrb.supabase.co";
@@ -283,7 +355,7 @@
     const emptyState = document.getElementById('emptyState');
     const statusBadge = document.getElementById('status');
     const sessionInput = document.getElementById('sessionInput');
-    const generateCodeBtn = document.getElementById('generateCodeBtn');
+    // const generateCodeBtn = document.getElementById('generateCodeBtn'); // removed
     const startSessionBtn = document.getElementById('startSessionBtn');
     const sessionInfo = document.getElementById('sessionInfo');
     const sessionCodeEl = document.getElementById('sessionCode');
@@ -291,6 +363,40 @@
     const qrCodeCanvas = document.getElementById('qrCode');
     const joinUrlInput = document.getElementById('joinUrl');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
+    const hideNamesToggle = document.getElementById('hideNamesToggle');
+    const studentFilter = document.getElementById('studentFilter');
+    const gridColumnsSelect = document.getElementById('gridColumnsSelect');
+
+    // Question panel elements
+    const questionPanel = document.getElementById('questionPanel');
+    const sendQuestionBtn = document.getElementById('sendQuestionBtn');
+    const modeBlankBtn = document.getElementById('modeBlank');
+    const modeTplBtn = document.getElementById('modeTpl');
+    const modeImgBtn = document.getElementById('modeImg');
+    const tplControls = document.getElementById('tplControls');
+    const imgControls = document.getElementById('imgControls');
+    const prepHanzi = document.getElementById('prepHanzi');
+    const prepGraphCorner = document.getElementById('prepGraphCorner');
+    const prepGraphCross = document.getElementById('prepGraphCross');
+    const prepPickImg = document.getElementById('prepPickImg');
+    const prepImgInput = document.getElementById('prepImgInput');
+    const prepImgName = document.getElementById('prepImgName');
+    const nextPreview = document.getElementById('nextPreview');
+    const nextPrevCtx = nextPreview?.getContext('2d');
+    const toast = document.getElementById('toast');
+    const stagedBadge = document.getElementById('stagedBadge');
+    const sendHint = document.getElementById('sendHint');
+    const reconnectBar = document.getElementById('reconnectBar');
+
+    function showToast(msg, kind){
+      if(!toast) return; toast.textContent = msg; toast.className = ''; toast.classList.add('is-visible');
+      if(kind==='warn') toast.classList.add('toast-warn');
+      if(kind==='success') toast.classList.add('toast-success');
+      setTimeout(()=>{ toast.classList.remove('is-visible','toast-warn','toast-success'); }, 1800);
+    }
+
+    function showReconnectBar(){ reconnectBar?.classList.remove('hidden'); }
+    function hideReconnectBar(){ reconnectBar?.classList.add('hidden'); }
 
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modalTitle');
@@ -317,6 +423,8 @@
     const headerGraphCornerBtn = document.getElementById('headerGraphCornerBtn');
     const headerGraphCrossBtn = document.getElementById('headerGraphCrossBtn');
     const headerTplClearBtn = document.getElementById('headerTplClearBtn');
+    const headerImageBtn = document.getElementById('headerImageBtn');
+    const headerImageInput = document.getElementById('headerImageInput');
 
     overlay.style.touchAction = 'none';
     const usePointerRawUpdate = 'onpointerrawupdate' in window;
@@ -361,27 +469,54 @@
     }
 
     // Wire generator button
-    generateCodeBtn.addEventListener('click', () => {
-      if (channel) return; // do not change during an active session
-      setSessionCode(generateAlphanumericCode());
-    });
+    // generateCodeBtn removed
 
-    // Auto-generate if empty on load
-    if (!sessionInput.value.trim()) {
-      setSessionCode(generateAlphanumericCode());
-    } else {
-      setSessionCode(sessionInput.value.trim());
+    // Initialize session code from URL param if present, else from input, else generate
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qp = (params.get('session') || '').trim();
+      if (qp) {
+        setSessionCode(qp);
+      } else if (sessionInput.value.trim()) {
+        setSessionCode(sessionInput.value.trim());
+      } else {
+        setSessionCode(generateAlphanumericCode());
+      }
+    } catch {
+      if (!sessionInput.value.trim()) setSessionCode(generateAlphanumericCode());
+      else setSessionCode(sessionInput.value.trim());
     }
 
     const students = new Map();
+    
+    // Always confirm before leaving/reloading the teacher app
+    window.addEventListener('beforeunload', (e) => {
+      e.preventDefault();
+      // Chrome requires returnValue to be set
+      e.returnValue = 'Are you sure you want to leave? This will end the session for all students.';
+      return e.returnValue;
+    });
     const activeRemoteStrokes = new Map();
 
     let currentStudent = null;
 
-    let teacherCurrentColor = COLOR_PRESETS[0].value;
-    let teacherCurrentTool = 'pen';
-    let teacherBrush = 4;
-    let teacherStylusOnly = true;
+    // Persist teacher drawing preferences
+    function loadTeacherPrefs(){
+      try {
+        const saved = localStorage.getItem('teacher_prefs');
+        if (!saved) return { color: COLOR_PRESETS[0].value, tool: 'pen', brush: 4, stylusOnly: true, toolbarOnLeft: true };
+        return JSON.parse(saved);
+      } catch { return { color: COLOR_PRESETS[0].value, tool: 'pen', brush: 4, stylusOnly: true, toolbarOnLeft: true }; }
+    }
+    function saveTeacherPrefs(prefs){
+      try { localStorage.setItem('teacher_prefs', JSON.stringify(prefs)); } catch {}
+    }
+    const prefs = loadTeacherPrefs();
+    let teacherCurrentColor = prefs.color;
+    let teacherCurrentTool = prefs.tool;
+    let teacherBrush = prefs.brush;
+    let teacherStylusOnly = prefs.stylusOnly;
+    let teacherToolbarOnLeft = prefs.toolbarOnLeft;
 
     // ===== Template overlay (sent once, centered) =====
     let templateImage = null; // HTMLImageElement or null
@@ -533,6 +668,33 @@
       teacherClearBtn.disabled = !hasContent;
     }
 
+    // Sort student cards alphanumerically (numbers before letters, then alphabetically)
+    function sortStudentCards() {
+      const query = (studentFilter?.value || '').trim().toLowerCase();
+      const cardsArray = Array.from(students.values())
+        .filter(s => !query || s.username.toLowerCase().includes(query))
+        .map(s => ({ username: s.username, card: s.card }))
+        .sort((a, b) => {
+          const nameA = a.username.toLowerCase();
+          const nameB = b.username.toLowerCase();
+          // Natural sort: handle numbers embedded in strings
+          return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      
+      // Re-append cards in sorted order
+      // Clear grid and re-append filtered cards to avoid gaps
+      studentsGrid.innerHTML = '';
+      cardsArray.forEach(item => {
+        if (item.card && item.card.parentNode === studentsGrid) {
+          studentsGrid.appendChild(item.card);
+        } else if (item.card) {
+          studentsGrid.appendChild(item.card);
+        }
+      });
+    }
+
+    studentFilter?.addEventListener('input', sortStudentCards);
+
     function ensureStudent(username) {
       if (students.has(username)) return students.get(username);
 
@@ -557,8 +719,8 @@
       card.className = 'flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5 shadow-[0_20px_55px_rgba(30,41,59,0.12)] backdrop-blur';
       card.innerHTML = `
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-semibold text-slate-900">${username}</h3>
-          <span class="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">Live</span>
+          <h3 class="text-lg font-semibold text-slate-900 student-name">${username}</h3>
+          <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
         </div>
         <div class="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner" style="aspect-ratio:4/3;">
           <canvas class="absolute inset-0 h-full w-full" width="400" height="300"></canvas>
@@ -588,8 +750,35 @@
       card.querySelector('button').addEventListener('click', () => openModalForStudent(student));
 
       renderStudent(student);
+      
+      // Sort cards after adding new student
+      sortStudentCards();
+      
       return student;
     }
+
+    // Preserve original names and toggle masking with asterisks
+    const nameOriginalMap = new WeakMap();
+    function maskName(name){ return name.replace(/\S/g,'*'); }
+    function updateNameVisibility(){
+      const hide = !!hideNamesToggle?.checked;
+      document.querySelectorAll('.student-name').forEach(el=>{
+        if(!nameOriginalMap.has(el)) nameOriginalMap.set(el, el.textContent || '');
+        const original = nameOriginalMap.get(el) || '';
+        el.textContent = hide ? maskName(original) : original;
+        el.classList.toggle('opacity-50', hide);
+      });
+    }
+    // Initialize once UI is built
+    setTimeout(updateNameVisibility, 0);
+    hideNamesToggle?.addEventListener('change', updateNameVisibility);
+
+    // Grid columns control
+    function updateGridColumns() {
+      const cols = parseInt(gridColumnsSelect.value, 10) || 3;
+      studentsGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    }
+    gridColumnsSelect?.addEventListener('change', updateGridColumns);
 
     function getActiveStrokeMap(username) {
       if (!activeRemoteStrokes.has(username)) {
@@ -698,6 +887,7 @@
     renderColorPalette(teacherColorPalette, (color) => {
       teacherCurrentColor = color;
       updateTeacherColorSelection();
+      saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
       if (teacherCurrentTool === 'eraser') {
         teacherCurrentTool = 'pen';
         updateTeacherToolButtons();
@@ -708,23 +898,29 @@
       btn.addEventListener('click', () => {
         teacherCurrentTool = btn.dataset.tool;
         updateTeacherToolButtons();
+        saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
       });
     });
     updateTeacherToolButtons();
     updateTeacherColorSelection();
 
+    teacherBrushSize.value = teacherBrush;
+    teacherSizeDisplay.textContent = teacherBrush;
     teacherBrushSize.addEventListener('input', (e) => {
       teacherBrush = parseInt(e.target.value, 10);
       teacherSizeDisplay.textContent = teacherBrush;
+      saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
 
+    teacherStylusToggle.classList.toggle('off', !teacherStylusOnly);
+    teacherStylusToggle.textContent = teacherStylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
     teacherStylusToggle.addEventListener('click', () => {
       teacherStylusOnly = !teacherStylusOnly;
       teacherStylusToggle.classList.toggle('off', !teacherStylusOnly);
       teacherStylusToggle.textContent = teacherStylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
+      saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
 
-    let teacherToolbarOnLeft = true;
     function updateTeacherToolbarPosition() {
       if (teacherToolbarOnLeft) {
         teacherWorkspace.classList.remove('flex-row-reverse');
@@ -739,6 +935,7 @@
     swapTeacherToolbarBtn.addEventListener('click', () => {
       teacherToolbarOnLeft = !teacherToolbarOnLeft;
       updateTeacherToolbarPosition();
+      saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
     updateTeacherToolbarPosition();
 
@@ -1088,13 +1285,14 @@
 
     startSessionBtn.addEventListener('click', startSession);
 
-    // Copy URL button
+    // Copy URL button with toast
     copyUrlBtn?.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(joinUrlInput.value);
-        copyUrlBtn.textContent = 'Copied!';
-        setTimeout(() => { copyUrlBtn.textContent = 'Copy'; }, 1500);
-      } catch {}
+        showToast('Join URL copied to clipboard!', 'success');
+      } catch {
+        showToast('Failed to copy URL', 'warn');
+      }
     });
 
     function startSession() {
@@ -1107,9 +1305,63 @@
       supabaseClient = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
       channel = supabaseClient.channel(`minimal-${sessionCode}`, { config: { broadcast: { ack: false } } });
 
+      // When teacher tab is closing/hidden, notify students to exit
+      const sendEndSession = () => {
+        try { channel?.send({ type:'broadcast', event:'teacher_end_session', payload:{} }); } catch {}
+      };
+      window.addEventListener('pagehide', sendEndSession);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') sendEndSession();
+      });
+
       channel.on('broadcast', { event: 'student_ready' }, ({ payload }) => {
         if (!payload?.username) return;
-        ensureStudent(payload.username);
+        const student = ensureStudent(payload.username);
+        // Push the current live template state to newcomers
+        if(templateImage && pendingPayload && pendingPayload.kind && pendingPayload.src){
+          try { channel.send({ type:'broadcast', event:'teacher_template', payload:{ target: payload.username, kind: pendingPayload.kind, src: pendingPayload.src } }); } catch {}
+        }
+      });
+
+      // Remove student on explicit leave notification
+      channel.on('broadcast', { event: 'student_leaving' }, ({ payload }) => {
+        const uname = payload?.username;
+        if (!uname) return;
+        const s = students.get(uname);
+        if (!s) return;
+        students.delete(uname);
+        // Remove card from grid if present
+        try { s.card?.remove?.(); } catch {}
+        // Reset currentStudent if needed
+        if (currentStudent && currentStudent.username === uname) {
+          currentStudent = null;
+        }
+        // Update count and empty state
+        try { studentCountEl.textContent = students.size; } catch {}
+        if (students.size === 0) {
+          emptyState.classList.remove('hidden');
+        }
+        // Notify teacher via toast
+        try { showToast(`${uname} left`, 'warn'); } catch {}
+      });
+
+      // When teacher_clear_all is broadcast (including by us), clear local views
+      channel.on('broadcast', { event: 'teacher_clear_all' }, () => {
+        templateImage = null;
+        activeAnnotationStroke = null;
+        // Clear all cached student strokes and annotations locally
+        students.forEach(st => {
+          st.strokes = [];
+          st.annotations = [];
+          st.annotationUndoStack = [];
+          st.annotationRedoStack = [];
+        });
+        // Reset any active stroke buffers
+        activeRemoteStrokes.clear();
+        try{ students.forEach(st => renderStudent(st)); }catch{}
+        // Clear modal overlay if open
+        try{ overlayCtx.clearRect(0,0,overlay.width, overlay.height); }catch{}
+        if(nextPrevCtx){ nextPrevCtx.fillStyle='#fff'; nextPrevCtx.fillRect(0,0,nextPreview.width,nextPreview.height); }
       });
 
       channel.on('broadcast', { event: 'student_stroke_start' }, ({ payload }) => {
@@ -1117,6 +1369,8 @@
         const student = ensureStudent(payload.username);
         const activeMap = getActiveStrokeMap(payload.username);
         activeMap.set(payload.stroke.id, { id: payload.stroke.id, color: payload.stroke.color || '#111827', size: payload.stroke.size || 3, points: [] });
+        // activity pulse
+        try { student.card.classList.add('card-hot'); setTimeout(()=> student.card.classList.remove('card-hot'), 3000); } catch {}
         renderStudent(student);
       });
 
@@ -1127,6 +1381,7 @@
         if (!stroke) return;
         appendPointWithInterpolation(stroke.points, { x: payload.x, y: payload.y });
         const student = ensureStudent(payload.username);
+        try { student.card.classList.add('card-hot'); setTimeout(()=> student.card.classList.remove('card-hot'), 3000); } catch {}
         renderStudent(student);
       });
 
@@ -1135,6 +1390,7 @@
         const activeMap = getActiveStrokeMap(payload.username);
         activeMap.delete(payload.stroke.id);
         addStudentStroke(payload.username, payload.stroke);
+        try { const s = students.get(payload.username); s && s.card.classList.add('card-hot'); setTimeout(()=> s && s.card.classList.remove('card-hot'), 3000); } catch {}
       });
 
       channel.on('broadcast', { event: 'student_state_change' }, ({ payload }) => {
@@ -1155,11 +1411,22 @@
       channel.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setStatus('connected', 'Connected');
+          hideReconnectBar();
           sessionInfo.classList.remove('hidden');
+          questionPanel.classList.remove('hidden');
           sessionCodeEl.textContent = sessionCode;
           channel.send({ type: 'broadcast', event: 'teacher_ready', payload: { sessionCode } });
         } else if (status === 'CHANNEL_ERROR') {
           setStatus('error', 'Connection error');
+          showReconnectBar();
+          // Auto-retry after 3s
+          setTimeout(() => {
+            if (channel) {
+              channel.subscribe().catch(() => {});
+            }
+          }, 3000);
+        } else if (status === 'CLOSED') {
+          showReconnectBar();
         }
       });
 
@@ -1175,13 +1442,18 @@
       window.addEventListener('beforeunload', sendClearAll);
 
       // Wire template buttons after channel is live
+      function rerenderAllStudents(){
+        try{ students.forEach(st => renderStudent(st)); }catch{}
+        if(currentStudent){ try{ renderStudent(currentStudent);}catch{} }
+      }
+
       function sendTemplate(kind, src){
         if(!channel) return;
         channel.send({ type:'broadcast', event:'teacher_template', payload:{ kind, src } });
         // also reflect in teacher view
-        if(kind==='clear'){ templateImage=null; renderStudent(currentStudent||{}); return; }
+        if(kind==='clear'){ templateImage=null; rerenderAllStudents(); return; }
         const img = new Image();
-        img.onload = () => { templateImage = img; renderStudent(currentStudent||{}); };
+        img.onload = () => { templateImage = img; rerenderAllStudents(); };
         img.crossOrigin = 'anonymous';
         img.src = src;
       }
@@ -1193,20 +1465,146 @@
       }
 
       function buildGraph(kind) {
-        const baseGrid = '<g stroke="#9ca3af" stroke-width="1" opacity="0.7">'+Array.from({length:41},(_,i)=>`<path d="M${i*20} 0 V800"/>`).join('')+Array.from({length:41},(_,i)=>`<path d="M0 ${i*20} H800"/>`).join('')+'</g>';
-        const axesCorner = '<g stroke="#60a5fa" stroke-width="2"><path d="M0 780 H780"/><path d="M20 0 V800"/></g>';
-        const axesCross = '<g stroke="#60a5fa" stroke-width="2"><path d="M0 400 H800"/><path d="M400 0 V800"/></g>';
+        // 800x600 to match canonical canvas; 20px grid; half-pixel for crisp lines
+        const w=800, h=600, step=20;
+        const vLines = Array.from({length: (w/step)+1 }, (_,i)=>`<path d="M${i*step+0.5} 0 H${i*step+0.5}"/>`).join('');
+        const hLines = Array.from({length: (h/step)+1 }, (_,i)=>`<path d="M0 ${i*step+0.5} V${i*step+0.5}"/>`).join('');
+        const grid = `<g stroke="#9ca3af" stroke-width="1" opacity="0.7">${Array.from({length:w/step+1},(_,i)=>`<path d=\"M${i*step+0.5} 0 V${h}\"/>`).join('')}${Array.from({length:h/step+1},(_,i)=>`<path d=\"M0 ${i*step+0.5} H${w}\"/>`).join('')}</g>`;
+        const axesCorner = `<g stroke="#60a5fa" stroke-width="2"><path d="M0 ${h-20} H${w-20}"/><path d="M20 0 V${h}"/></g>`;
+        const axesCross = `<g stroke="#60a5fa" stroke-width="2"><path d="M0 ${h/2} H${w}"/><path d="M${w/2} 0 V${h}"/></g>`;
         const axes = kind==='corner' ? axesCorner : axesCross;
-        return svgDataUri(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><rect width="800" height="800" fill="white"/>${baseGrid}${axes}</svg>`);
+        return svgDataUri(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="white"/>${grid}${axes}</svg>`);
       }
 
-      function wireHeaderTemplateButtons(){
-        headerHanziBtn?.addEventListener('click', ()=> { templateFit = 0.96; sendTemplate('hanzi', buildHanziBox()); });
-        headerGraphCornerBtn?.addEventListener('click', ()=> sendTemplate('graph_corner', buildGraph('corner')));
-        headerGraphCrossBtn?.addEventListener('click', ()=> sendTemplate('graph_cross', buildGraph('cross')));
-        headerTplClearBtn?.addEventListener('click', ()=> sendTemplate('clear'));
+      // Prepare-next flow (load first, send on demand)
+      let pendingMode = 'blank'; // blank|tpl|image
+      let pendingPayload = { kind:'clear', src:null };
+
+      function updateStagedBadge(){
+        if(!stagedBadge) return;
+        if(pendingMode==='blank'){ stagedBadge.classList.add('hidden'); return; }
+        const label = pendingPayload?.kind==='image' ? (prepImgName?.textContent || 'Image')
+          : pendingPayload?.kind?.replace('graph_','Graph ')
+            ?.replace('hanzi','Hanzi');
+        stagedBadge.textContent = label ? `Staged: ${label}` : 'Staged';
+        stagedBadge.classList.remove('hidden');
       }
-      wireHeaderTemplateButtons();
+
+      function validateSendReady(){
+        const ready = (pendingMode==='blank') || !!(pendingPayload && pendingPayload.src);
+        if(sendQuestionBtn){ sendQuestionBtn.disabled = !ready; }
+        if(sendHint){ sendHint.classList.toggle('hidden', ready); }
+      }
+
+      function setMode(m){
+        pendingMode = m;
+        [modeBlankBtn,modeTplBtn,modeImgBtn].forEach(b=>{
+          if(!b) return; b.classList.remove('is-active'); b.setAttribute('aria-pressed','false');
+        });
+        if(m==='blank'){ modeBlankBtn?.classList.add('is-active'); tplControls.classList.add('hidden'); imgControls.classList.add('hidden'); pendingPayload={kind:'clear',src:null}; templateImage=null; rerenderAllStudents(); }
+        if(m==='tpl'){ modeTplBtn?.classList.add('is-active'); tplControls.classList.remove('hidden'); imgControls.classList.add('hidden'); }
+        if(m==='image'){ modeImgBtn?.classList.add('is-active'); imgControls.classList.remove('hidden'); tplControls.classList.add('hidden'); }
+        const activeBtn = m==='blank'?modeBlankBtn : m==='tpl'?modeTplBtn : modeImgBtn;
+        activeBtn?.setAttribute('aria-pressed','true');
+        updateStagedBadge();
+        validateSendReady();
+      }
+      modeBlankBtn?.addEventListener('click', ()=> setMode('blank'));
+      modeTplBtn?.addEventListener('click', ()=> setMode('tpl'));
+      modeImgBtn?.addEventListener('click', ()=> setMode('image'));
+      setMode('blank');
+
+      // Template prep
+      function drawNextPreviewFromSrc(src, fit){
+        if(!nextPrevCtx) return;
+        nextPrevCtx.fillStyle = '#fff'; nextPrevCtx.fillRect(0,0,nextPreview.width,nextPreview.height);
+        const img = new Image();
+        img.onload = () => {
+          const s = Math.min(nextPreview.width/img.naturalWidth, nextPreview.height/img.naturalHeight) * (fit||0.96);
+          const w = img.naturalWidth*s, h = img.naturalHeight*s;
+          const dx = Math.round((nextPreview.width - w)/2), dy = Math.round((nextPreview.height - h)/2);
+          nextPrevCtx.drawImage(img, dx, dy, w, h);
+        };
+        img.onerror = () => {
+          showToast('Failed to load image. Please try another.', 'warn');
+          pendingPayload = null;
+          validateSendReady();
+        };
+        img.src = src;
+      }
+
+      prepHanzi?.addEventListener('click', ()=>{
+        templateFit=0.96; pendingPayload={kind:'hanzi', src:buildHanziBox()};
+        drawNextPreviewFromSrc(pendingPayload.src, templateFit);
+        updateStagedBadge(); validateSendReady();
+      });
+      prepGraphCorner?.addEventListener('click', ()=>{
+        templateFit=0.9; pendingPayload={kind:'graph_corner', src:buildGraph('corner')};
+        drawNextPreviewFromSrc(pendingPayload.src, templateFit);
+        updateStagedBadge(); validateSendReady();
+      });
+      prepGraphCross?.addEventListener('click', ()=>{
+        templateFit=0.9; pendingPayload={kind:'graph_cross', src:buildGraph('cross')};
+        drawNextPreviewFromSrc(pendingPayload.src, templateFit);
+        updateStagedBadge(); validateSendReady();
+      });
+
+      // Image prep
+      prepPickImg?.addEventListener('click', ()=> prepImgInput?.click());
+      prepImgInput?.addEventListener('change', (e)=>{
+        const file = e.target.files && e.target.files[0]; if(!file) return;
+        prepImgName.textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = () => {
+          templateFit = 0.96; pendingPayload = { kind:'image', src: reader.result };
+          drawNextPreviewFromSrc(pendingPayload.src, templateFit);
+          updateStagedBadge(); validateSendReady();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // Send next: clear all, then broadcast chosen mode
+      sendQuestionBtn?.addEventListener('click', ()=>{
+        // validate selection for tpl/image modes
+        if(pendingMode==='tpl' && (!pendingPayload || !pendingPayload.src)){
+          showToast('Choose a template before sending.', 'warn'); return;
+        }
+        if(pendingMode==='image' && (!pendingPayload || !pendingPayload.src)){
+          showToast('Pick an image before sending.', 'warn'); return;
+        }
+        // cooldown 3s
+        sendQuestionBtn.disabled = true;
+        setTimeout(()=>{ validateSendReady(); }, 3000);
+        // clear everyone (broadcast to students)
+        try { channel?.send({ type:'broadcast', event:'teacher_clear_all', payload:{} }); } catch {}
+        
+        // ALSO clear locally on teacher side (we don't receive our own broadcasts)
+        templateImage = null;
+        activeAnnotationStroke = null;
+        students.forEach(st => {
+          st.strokes = [];  // Clear student drawings
+          st.annotations = [];  // Clear teacher annotations
+          st.annotationUndoStack = [];
+          st.annotationRedoStack = [];
+        });
+        activeRemoteStrokes.clear();
+        
+        // Re-render all student cards
+        try { students.forEach(st => renderStudent(st)); } catch {}
+        
+        // Clear modal overlay if open
+        try { overlayCtx.clearRect(0,0,overlay.width, overlay.height); } catch {}
+        
+        // Clear local tiny preview
+        if(nextPrevCtx){ nextPrevCtx.fillStyle='#fff'; nextPrevCtx.fillRect(0,0,nextPreview.width,nextPreview.height); }
+        
+        // Now send the new mode
+        if(pendingMode==='blank'){ sendTemplate('clear', null); }
+        else if(pendingPayload?.kind && pendingPayload?.src){ sendTemplate(pendingPayload.kind, pendingPayload.src); }
+        
+        const count = students.size;
+        showToast(`Sent to ${count} student${count===1?'':'s'}`, 'success');
+      });
 
       // Sidebar template buttons removed
     }
