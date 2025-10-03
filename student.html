@@ -650,7 +650,7 @@
       // Tell teacher which student strokes were removed
       const nextSnapshot = buildStateSnapshot(state.strokes);
       broadcastDiff(prevSnapshot, nextSnapshot);
-      channel?.send({ type: 'broadcast', event: 'student_clear', payload: { username } });
+      channel?.send({ type: 'broadcast', event: 'student_clear', payload: { username, env:{v:1,s:sessionCode,seq:Date.now()} } });
     }
 
     /* ----------------- Drawing ----------------- */
@@ -837,7 +837,7 @@
       };
       state.currentPath = stroke;
       strokeLiveBegin(pt, stroke.size, stroke.color);
-      channel?.send({ type: 'broadcast', event: 'student_stroke_start', payload: { username, stroke: { id: stroke.id, color: stroke.color, size: stroke.size } } });
+      channel?.send({ type: 'broadcast', event: 'student_stroke_start', payload: { username, stroke: { id: stroke.id, color: stroke.color, size: stroke.size }, env:{v:1,s:sessionCode,seq:Date.now()} } });
     }
 
     function moveStroke(e) {
@@ -869,7 +869,7 @@
       if (!state.currentPath) return;
       state.currentPath.points.push(pt);
       strokeLiveTo(pt);
-      channel?.send({ type: 'broadcast', event: 'student_stroke_point', payload: { username, strokeId: state.currentPath.id, x: pt.x, y: pt.y } });
+      channel?.send({ type: 'broadcast', event: 'student_stroke_point', payload: { username, strokeId: state.currentPath.id, x: pt.x, y: pt.y, env:{v:1,s:sessionCode,seq:Date.now()} } });
     }
 
     function endStroke(e) {
@@ -909,7 +909,8 @@
               color: path.color,
               size: path.size,
               points: path.points.map(p => ({ x: p.x, y: p.y }))
-            }
+            },
+            env:{v:1,s:sessionCode,seq:Date.now()}
           }
         });
       }
@@ -1066,6 +1067,23 @@
         else if (kind.startsWith('graph')) templateFit = 0.9;
         else templateFit = 0.96;
       });
+
+      // Teacher sends snapshot (template + optional strokes). We only use template
+      ch.on('broadcast', { event: 'teacher_snapshot' }, ({ payload }) => {
+        if (payload.target && payload.target !== username) return;
+        const tpl = payload?.template;
+        if (tpl && tpl.kind && tpl.src) {
+          const kind = String(tpl.kind || '').toLowerCase();
+          const src = tpl.src;
+          templateImg.onload = () => { templateActive = true; renderAll(); };
+          templateImg.onerror = () => { templateActive = false; };
+          templateImg.crossOrigin = 'anonymous';
+          templateImg.src = src;
+          if (kind === 'hanzi') templateFit = 0.96;
+          else if (kind.startsWith('graph')) templateFit = 0.9;
+          else templateFit = 0.96;
+        }
+      });
     }
 
     async function setupSupabase() {
@@ -1081,7 +1099,9 @@
       channel.subscribe(async (st) => {
         if (st === 'SUBSCRIBED') {
           setStatus('connected', `Connected as ${username}`);
-          await channel.send({ type:'broadcast', event:'student_ready', payload:{ username, sessionCode }});
+          await channel.send({ type:'broadcast', event:'student_ready', payload:{ username, sessionCode, env:{v:1,s:sessionCode,seq:Date.now()} }});
+          // request a fresh snapshot to avoid drift
+          await channel.send({ type:'broadcast', event:'student_sync_request', payload:{ username, env:{v:1,s:sessionCode,seq:Date.now()} }});
         } else if (st === 'CHANNEL_ERROR') {
           setStatus('error', 'Connection error');
         }

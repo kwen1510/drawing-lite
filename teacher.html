@@ -138,15 +138,18 @@
             <input id="hideNamesToggle" type="checkbox" class="accent-emerald-600" />
             <span>Hide names</span>
           </label>
-          <label class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700">
+          <div id="gridColumnsWrap" class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 cursor-pointer shadow-sm transition hover:bg-white/90 hover:border-emerald-300">
             <span>Cards/row:</span>
-            <select id="gridColumnsSelect" class="rounded border-none bg-transparent font-bold text-emerald-700 focus:outline-none focus:ring-0">
+            <span id="gridColumnsValue" class="ml-1 inline-flex items-center gap-1 font-bold text-emerald-700">3
+              <svg class="ml-1 h-3 w-3 text-emerald-700" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"/></svg>
+            </span>
+            <select id="gridColumnsSelect" class="sr-only" aria-label="Cards per row">
               <option value="1">1</option>
               <option value="2">2</option>
               <option value="3" selected>3</option>
               <option value="4">4</option>
             </select>
-          </label>
+          </div>
         </div>
       </div>
       <!-- Question preparation panel -->
@@ -365,6 +368,8 @@
     const copyUrlBtn = document.getElementById('copyUrlBtn');
     const hideNamesToggle = document.getElementById('hideNamesToggle');
     const studentFilter = document.getElementById('studentFilter');
+    const gridColumnsWrap = document.getElementById('gridColumnsWrap');
+    const gridColumnsValue = document.getElementById('gridColumnsValue');
     const gridColumnsSelect = document.getElementById('gridColumnsSelect');
 
     // Question panel elements
@@ -434,6 +439,29 @@
       const t = (e.pointerType || '').toLowerCase();
       if (teacherStylusOnly) return t === '' || t === 'pen';
       return t === '' || t === 'pen' || t === 'mouse' || t === 'touch';
+    }
+
+    /* ----------------- Sync helpers ----------------- */
+    const lastSeqByUser = new Map();
+    function isValidEnvelope(env){
+      if(!env) return true; // backward compatibility
+      if(env.s && env.s !== sessionCode) return false;
+      if(env.v && env.v !== 1) return false;
+      return true;
+    }
+    function acceptSeq(username, env){
+      if(!env || typeof env.seq !== 'number') return true; // allow old clients
+      const last = lastSeqByUser.get(username) || 0;
+      if(env.seq <= last) return false;
+      lastSeqByUser.set(username, env.seq);
+      return true;
+    }
+
+    function scheduleRenderStudent(student){
+      if(!student) return;
+      if(student._renderQueued) return;
+      student._renderQueued = true;
+      requestAnimationFrame(()=>{ try{ renderStudent(student); }finally{ student._renderQueued = false; } });
     }
 
     let supabaseClient = null;
@@ -719,8 +747,14 @@
       card.className = 'flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5 shadow-[0_20px_55px_rgba(30,41,59,0.12)] backdrop-blur';
       card.innerHTML = `
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-semibold text-slate-900 student-name">${username}</h3>
-          <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
+          <div class="flex items-center gap-2 min-w-0">
+            <h3 class="text-lg font-semibold text-slate-900 student-name truncate">${username}</h3>
+            <span class="last-seen text-xs font-medium text-slate-500">—</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="annotation-tick hidden inline-block h-2 w-2 rounded-full bg-emerald-600"></span>
+            <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
+          </div>
         </div>
         <div class="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner" style="aspect-ratio:4/3;">
           <canvas class="absolute inset-0 h-full w-full" width="400" height="300"></canvas>
@@ -739,6 +773,9 @@
         previewCanvas,
         previewCtx,
         card,
+        lastSeenEl: card.querySelector('.last-seen'),
+        tickEl: card.querySelector('.annotation-tick'),
+        lastSeen: Date.now(),
         annotations: [],
         annotationUndoStack: [],
         annotationRedoStack: [],
@@ -778,7 +815,8 @@
       const cols = parseInt(gridColumnsSelect.value, 10) || 3;
       studentsGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     }
-    gridColumnsSelect?.addEventListener('change', updateGridColumns);
+    gridColumnsSelect?.addEventListener('change', () => { updateGridColumns(); gridColumnsValue && (gridColumnsValue.firstChild.nodeValue = gridColumnsSelect.value); });
+    gridColumnsWrap?.addEventListener('click', () => { gridColumnsSelect?.focus(); gridColumnsSelect?.click(); });
 
     function getActiveStrokeMap(username) {
       if (!activeRemoteStrokes.has(username)) {
@@ -948,6 +986,10 @@
       if (activePoints?.length && activeAnnotationStroke) {
         drawSmoothStrokePath(overlayCtx, activePoints, activeAnnotationStroke.color, activeAnnotationStroke.size);
       }
+
+function markAnnotated(student){
+  try { if(student?.tickEl){ student.tickEl.classList.remove('hidden'); } } catch {}
+}
     }
 
     function getOverlayPoint(ev) {
@@ -986,8 +1028,9 @@
       student.annotationRedoStack.length = 0;
       redrawAnnotationOverlay();
       updateAnnotationButtons();
-      renderStudent(student);
-      channel?.send({ type: 'broadcast', event: 'teacher_stroke_end', payload: { target: student.username, stroke: committed } });
+  renderStudent(student);
+  channel?.send({ type: 'broadcast', event: 'teacher_stroke_end', payload: { target: student.username, stroke: committed } });
+  markAnnotated(student);
     }
 
     function beginTeacherErase(point) {
@@ -1193,6 +1236,7 @@
         currentStudent.annotations.push(path);
         currentStudent.annotationUndoStack.push({ type: 'draw', path });
         channel?.send({ type: 'broadcast', event: 'teacher_stroke_end', payload: { target: currentStudent.username, stroke: { ...path, points: path.points.map(p => ({ x: p.x, y: p.y })) } } });
+        markAnnotated(currentStudent);
       }
 
       else if (action.type === 'erase') {
@@ -1316,11 +1360,23 @@
 
       channel.on('broadcast', { event: 'student_ready' }, ({ payload }) => {
         if (!payload?.username) return;
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         const student = ensureStudent(payload.username);
         // Push the current live template state to newcomers
         if(templateImage && pendingPayload && pendingPayload.kind && pendingPayload.src){
           try { channel.send({ type:'broadcast', event:'teacher_template', payload:{ target: payload.username, kind: pendingPayload.kind, src: pendingPayload.src } }); } catch {}
         }
+      });
+
+      // Student requests a fresh snapshot
+      channel.on('broadcast', { event: 'student_sync_request' }, ({ payload }) => {
+        const uname = payload?.username; if(!uname) return;
+        try {
+          const s = students.get(uname) || ensureStudent(uname);
+          const snapshot = (s.strokes || []).map(p=>({ id:p.id, color:p.color, size:p.size, points:p.points }));
+          channel.send({ type:'broadcast', event:'teacher_snapshot', payload:{ target: uname, strokes: snapshot, template: (pendingPayload||null) } });
+        } catch {}
       });
 
       // Remove student on explicit leave notification
@@ -1365,16 +1421,22 @@
       });
 
       channel.on('broadcast', { event: 'student_stroke_start' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username || !payload.stroke?.id) return;
         const student = ensureStudent(payload.username);
         const activeMap = getActiveStrokeMap(payload.username);
         activeMap.set(payload.stroke.id, { id: payload.stroke.id, color: payload.stroke.color || '#111827', size: payload.stroke.size || 3, points: [] });
         // activity pulse
         try { student.card.classList.add('card-hot'); setTimeout(()=> student.card.classList.remove('card-hot'), 3000); } catch {}
+        // update last seen timestamp UI
+        try { student.lastSeen = Date.now(); if(student.lastSeenEl){ student.lastSeenEl.textContent = new Date(student.lastSeen).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }); } } catch {}
         renderStudent(student);
       });
 
       channel.on('broadcast', { event: 'student_stroke_point' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username || !payload.strokeId) return;
         const activeMap = getActiveStrokeMap(payload.username);
         const stroke = activeMap.get(payload.strokeId);
@@ -1382,28 +1444,37 @@
         appendPointWithInterpolation(stroke.points, { x: payload.x, y: payload.y });
         const student = ensureStudent(payload.username);
         try { student.card.classList.add('card-hot'); setTimeout(()=> student.card.classList.remove('card-hot'), 3000); } catch {}
-        renderStudent(student);
+        try { student.lastSeen = Date.now(); if(student.lastSeenEl){ student.lastSeenEl.textContent = new Date(student.lastSeen).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }); } } catch {}
+        scheduleRenderStudent(student);
       });
 
       channel.on('broadcast', { event: 'student_stroke_end' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username || !payload.stroke) return;
         const activeMap = getActiveStrokeMap(payload.username);
         activeMap.delete(payload.stroke.id);
         addStudentStroke(payload.username, payload.stroke);
-        try { const s = students.get(payload.username); s && s.card.classList.add('card-hot'); setTimeout(()=> s && s.card.classList.remove('card-hot'), 3000); } catch {}
+        try { const s = students.get(payload.username); if(s){ s.card.classList.add('card-hot'); setTimeout(()=> s.card.classList.remove('card-hot'), 3000); s.lastSeen = Date.now(); if(s.lastSeenEl){ s.lastSeenEl.textContent = new Date(s.lastSeen).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }); } } } catch {}
       });
 
       channel.on('broadcast', { event: 'student_state_change' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username) return;
         applyStudentStateChange(payload.username, payload);
       });
 
       channel.on('broadcast', { event: 'student_stroke_delete' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username || !payload.strokeId) return;
         removeStudentStroke(payload.username, payload.strokeId);
       });
 
       channel.on('broadcast', { event: 'student_clear' }, ({ payload }) => {
+        if(!isValidEnvelope(payload.env)) return;
+        if(!acceptSeq(payload.username, payload.env)) return;
         if (!payload?.username) return;
         handleStudentClear(payload.username);
       });
