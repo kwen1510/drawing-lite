@@ -260,6 +260,9 @@
     const swapToolbarBtn = document.getElementById('swapToolbarBtn');
     const workspace = document.getElementById('workspace');
     const stage = document.getElementById('stage');
+    const templateImg = new Image();
+    let templateActive = false;
+    let templateFit = 0.9; // default; hanzi will increase
 
     const CANVAS_WIDTH = 800;
     const CANVAS_HEIGHT = 600;
@@ -536,8 +539,12 @@
 
       else if (action.type === 'clear') {
         const prev = action.prev || [];
-        state.redoStack.push({ type: 'clear', prev: clonePaths(state.strokes) });
-        state.strokes = clonePaths(prev);
+        // Save current student-only strokes to redo
+        const currentStudents = clonePaths(state.strokes.filter(s => !s.isTeacher));
+        state.redoStack.push({ type: 'clear', prev: currentStudents });
+        // Merge teachers (current) with restored student strokes
+        const teachers = state.strokes.filter(s => s.isTeacher);
+        state.strokes = [...teachers, ...clonePaths(prev)];
       }
 
       renderAll();
@@ -577,9 +584,10 @@
       }
 
       else if (action.type === 'clear') {
-        const snapshot = clonePaths(state.strokes);
-        state.strokes = [];
-        state.undoStack.push({ type: 'clear', prev: snapshot });
+        // Clear students again, keep teachers
+        const studentsNow = clonePaths(state.strokes.filter(s => !s.isTeacher));
+        state.strokes = state.strokes.filter(s => s.isTeacher);
+        state.undoStack.push({ type: 'clear', prev: studentsNow });
       }
 
       renderAll();
@@ -594,15 +602,19 @@
         renderAll();
         return;
       }
+      // Only clear student strokes; keep teachers
+      const prevStudents = clonePaths(state.strokes.filter(s => !s.isTeacher));
+      const teachers = state.strokes.filter(s => s.isTeacher);
       const prevSnapshot = buildStateSnapshot(state.strokes);
-      const snapshot = clonePaths(state.strokes);
-      state.strokes = [];
-      state.undoStack.push({ type: 'clear', prev: snapshot });
+      state.strokes = teachers;
+      state.undoStack.push({ type: 'clear', prev: prevStudents });
       state.redoStack.length = 0;
       renderAll();
       updateHistoryButtons();
       saveToSession();
-      broadcastDiff(prevSnapshot, []);
+      // Tell teacher which student strokes were removed
+      const nextSnapshot = buildStateSnapshot(state.strokes);
+      broadcastDiff(prevSnapshot, nextSnapshot);
       channel?.send({ type: 'broadcast', event: 'student_clear', payload: { username } });
     }
 
@@ -641,6 +653,20 @@
     function renderAll() {
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      // Border to show drawable bounds
+      ctx.save();
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0.5, 0.5, CANVAS_WIDTH-1, CANVAS_HEIGHT-1);
+      ctx.restore();
+      if (templateActive && templateImg.complete && templateImg.naturalWidth) {
+        // draw centered template (90% fit)
+        const srcW = templateImg.naturalWidth, srcH = templateImg.naturalHeight;
+        const scale = Math.min(CANVAS_WIDTH / srcW, CANVAS_HEIGHT / srcH) * templateFit;
+        const w = Math.round(srcW * scale), h = Math.round(srcH * scale);
+        const dx = Math.round((CANVAS_WIDTH - w) / 2), dy = Math.round((CANVAS_HEIGHT - h) / 2);
+        ctx.drawImage(templateImg, dx, dy, w, h);
+      }
       state.strokes.forEach(path => {
         const pts = path.points || [];
         if (!pts.length) return;
@@ -697,6 +723,8 @@
     function hitStrokeIndex(pt) {
       for (let i = state.strokes.length - 1; i >= 0; i--) {
         const path = state.strokes[i];
+        // Students can only erase their own strokes; skip teacher paths
+        if (path && path.isTeacher) continue;
         const pts = path.points || [];
         if (!pts.length) continue;
         const size = path.size || brushSize;
@@ -717,6 +745,11 @@
       const idx = hitStrokeIndex(pt);
       if (idx !== -1) {
         const [removed] = state.strokes.splice(idx, 1);
+        if (removed && removed.isTeacher) {
+          // safety: never remove teacher strokes on student side
+          state.strokes.splice(idx, 0, removed);
+          return;
+        }
         if (!removed) return;
         state.eraseBatch.push({ path: removed, index: idx });
         renderAll();
@@ -945,6 +978,26 @@
         renderAll();
         updateHistoryButtons();
         saveToSession();
+      });
+
+      // Receive template commands
+      ch.on('broadcast', { event: 'teacher_template' }, ({ payload }) => {
+        if (payload.target && payload.target !== username) return;
+        const kind = (payload?.kind || '').toLowerCase();
+        if (kind === 'clear') {
+          templateActive = false;
+          templateImg.src = '';
+          renderAll();
+          return;
+        }
+        const src = payload?.src;
+        if (!src) return;
+        templateImg.onload = () => { templateActive = true; renderAll(); };
+        templateImg.onerror = () => { templateActive = false; };
+        templateImg.crossOrigin = 'anonymous';
+        templateImg.src = src;
+        // adjust fit depending on type
+        if (kind === 'hanzi') templateFit = 0.96; else templateFit = 0.9;
       });
 
       // Teacher ended the session: clear everything for this student

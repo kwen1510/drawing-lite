@@ -78,6 +78,13 @@
             Not connected
           </div>
         </div>
+        <div class="flex items-center gap-2 pt-2">
+          <span class="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">Template</span>
+          <button id="headerHanziBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Hanzi box</button>
+          <button id="headerGraphCornerBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (corner)</button>
+          <button id="headerGraphCrossBtn" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50">Graph (cross)</button>
+          <button id="headerTplClearBtn" class="rounded-lg bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-600 shadow-sm transition hover:bg-rose-200">Remove</button>
+        </div>
       </div>
       <div
         id="sessionInfo"
@@ -227,6 +234,7 @@
                 </button>
               </div>
             </div>
+            
           </div>
         </div>
         <div class="flex min-h-0 flex-1 items-center justify-center rounded-[24px] border border-slate-200 bg-white/65 p-3 shadow-inner">
@@ -304,6 +312,11 @@
     const swapTeacherToolbarBtn = document.getElementById('swapTeacherToolbarBtn');
     const teacherWorkspace = document.getElementById('teacherWorkspace');
     const teacherStage = document.getElementById('teacherStage');
+    // removed sidebar template buttons
+    const headerHanziBtn = document.getElementById('headerHanziBtn');
+    const headerGraphCornerBtn = document.getElementById('headerGraphCornerBtn');
+    const headerGraphCrossBtn = document.getElementById('headerGraphCrossBtn');
+    const headerTplClearBtn = document.getElementById('headerTplClearBtn');
 
     overlay.style.touchAction = 'none';
     const usePointerRawUpdate = 'onpointerrawupdate' in window;
@@ -369,6 +382,23 @@
     let teacherCurrentTool = 'pen';
     let teacherBrush = 4;
     let teacherStylusOnly = true;
+
+    // ===== Template overlay (sent once, centered) =====
+    let templateImage = null; // HTMLImageElement or null
+    let templateFit = 0.9;    // 0..1 fit factor (hanzi larger)
+    function drawTemplateIfAny(ctx) {
+      if (!templateImage) return;
+      const srcW = templateImage.naturalWidth;
+      const srcH = templateImage.naturalHeight;
+      const dstW = bigCanvas.width;
+      const dstH = bigCanvas.height;
+      const scale = Math.min(dstW / srcW, dstH / srcH) * templateFit; // fit with margin
+      const drawW = Math.round(srcW * scale);
+      const drawH = Math.round(srcH * scale);
+      const dx = Math.round((dstW - drawW) / 2);
+      const dy = Math.round((dstH - drawH) / 2);
+      ctx.drawImage(templateImage, dx, dy, drawW, drawH);
+    }
 
     let annotationPointerId = null;
     let activeAnnotationStroke = null;
@@ -579,7 +609,8 @@
       }
 
       student.previewCtx.clearRect(0, 0, student.previewCanvas.width, student.previewCanvas.height);
-      // Letterbox-fit draw to preserve full canvas without cropping
+      // Letterbox-fit coordinates onto preview; draw everything procedurally (template + strokes),
+      // so the template stays behind strokes
       const dstW = student.previewCanvas.width;
       const dstH = student.previewCanvas.height;
       const srcW = 800, srcH = 600;
@@ -588,19 +619,48 @@
       const drawH = srcH * scale;
       const dx = Math.round((dstW - drawW) / 2);
       const dy = Math.round((dstH - drawH) / 2);
-      student.previewCtx.drawImage(student.canvas, 0, 0, srcW, srcH, dx, dy, drawW, drawH);
       student.previewCtx.save();
       student.previewCtx.translate(dx, dy);
       student.previewCtx.scale(scale, scale);
-      student.annotations.forEach(stroke => {
-        if (stroke) drawSmoothStrokePath(student.previewCtx, stroke.points, stroke.color, stroke.size);
-      });
+      // Draw template first (behind strokes)
+      if (templateImage && templateImage.naturalWidth) {
+        const tScale = Math.min(800 / templateImage.naturalWidth, 600 / templateImage.naturalHeight) * templateFit;
+        const tw = templateImage.naturalWidth * tScale;
+        const th = templateImage.naturalHeight * tScale;
+        const tx = (800 - tw) / 2;
+        const ty = (600 - th) / 2;
+        student.previewCtx.drawImage(templateImage, tx, ty, tw, th);
+      }
+      // Draw student strokes (same order as base canvas)
+      student.strokes.forEach(stroke => drawSmoothStrokePath(student.previewCtx, stroke.points, stroke.color, stroke.size));
+      // Draw any in-progress active remote strokes
+      const activePreview = activeRemoteStrokes.get(student.username);
+      if (activePreview) {
+        activePreview.forEach(stroke => drawSmoothStrokePath(student.previewCtx, stroke.points, stroke.color, stroke.size));
+      }
+      // Draw teacher annotations committed for this student
+      (student.annotations || []).forEach(stroke => drawSmoothStrokePath(student.previewCtx, stroke.points, stroke.color, stroke.size));
+      student.previewCtx.restore();
+      // draw border in preview to match student
+      student.previewCtx.save();
+      student.previewCtx.strokeStyle = '#cbd5e1';
+      student.previewCtx.lineWidth = 1;
+      student.previewCtx.strokeRect(dx + 0.5, dy + 0.5, drawW - 1, drawH - 1);
       student.previewCtx.restore();
 
       if (currentStudent && currentStudent.username === student.username) {
+        // Recompose modal canvas procedurally, do not paste student.canvas bitmap
         bigCtx.fillStyle = '#ffffff';
         bigCtx.fillRect(0, 0, bigCanvas.width, bigCanvas.height);
-        bigCtx.drawImage(student.canvas, 0, 0);
+        drawTemplateIfAny(bigCtx); // template first
+        // Draw a subtle border indicating exact drawable area (800x600 mapped 1:1)
+        bigCtx.save();
+        bigCtx.strokeStyle = '#cbd5e1';
+        bigCtx.lineWidth = 2;
+        bigCtx.strokeRect(0.5, 0.5, 799, 599);
+        bigCtx.restore();
+        // Draw student's base strokes (without annotations) directly
+        student.strokes.forEach(stroke => drawSmoothStrokePath(bigCtx, stroke.points, stroke.color, stroke.size));
         redrawAnnotationOverlay(activeAnnotationStroke?.points || null);
       }
     }
@@ -608,10 +668,8 @@
     function openModalForStudent(student) {
       currentStudent = student;
       modalTitle.textContent = `Annotating ${student.username}`;
-      bigCtx.fillStyle = '#ffffff';
-      bigCtx.fillRect(0, 0, bigCanvas.width, bigCanvas.height);
-      bigCtx.drawImage(student.canvas, 0, 0);
-      redrawAnnotationOverlay();
+      // Use the same renderer so the template is shown consistently
+      renderStudent(student);
       updateAnnotationButtons();
       modal.classList.remove('invisible', 'pointer-events-none');
       modal.classList.add('pointer-events-auto');
@@ -789,6 +847,7 @@
       let removed = false;
       for (let i = student.annotations.length - 1; i >= 0; i--) {
         const stroke = student.annotations[i];
+        // Teacher can only erase teacher annotations; ignore student strokes list here
         if (!stroke || erasedAnnotationIds.has(stroke.id)) continue;
         const hit = stroke.points.some((p, idx) => {
           const dist = Math.hypot(p.x - x, p.y - y);
@@ -987,7 +1046,7 @@
       const student = ensureStudent(username);
       if (!stroke?.id || !stroke.points?.length) return;
       if (student.strokes.some(s => s.id === stroke.id)) return;
-      student.strokes.push({ id: stroke.id, color: stroke.color || '#111827', size: stroke.size || 3, points: stroke.points.map(p => ({ x: p.x, y: p.y })) });
+      student.strokes.push({ id: stroke.id, color: stroke.color || '#111827', size: stroke.size || 3, points: stroke.points.map(p => ({ x: p.x, y: p.y })), isTeacher: false });
       renderStudent(student);
     }
 
@@ -1007,7 +1066,7 @@
       const student = ensureStudent(username);
       (payload.added || []).forEach(stroke => {
         if (!student.strokes.some(s => s.id === stroke.id)) {
-          student.strokes.push({ id: stroke.id, color: stroke.color || '#111827', size: stroke.size || 3, points: (stroke.points || []).map(p => ({ x: p.x, y: p.y })) });
+          student.strokes.push({ id: stroke.id, color: stroke.color || '#111827', size: stroke.size || 3, points: (stroke.points || []).map(p => ({ x: p.x, y: p.y })), isTeacher: false });
         }
       });
       (payload.removed || []).forEach(id => {
@@ -1114,6 +1173,42 @@
       };
       window.addEventListener('pagehide', sendClearAll);
       window.addEventListener('beforeunload', sendClearAll);
+
+      // Wire template buttons after channel is live
+      function sendTemplate(kind, src){
+        if(!channel) return;
+        channel.send({ type:'broadcast', event:'teacher_template', payload:{ kind, src } });
+        // also reflect in teacher view
+        if(kind==='clear'){ templateImage=null; renderStudent(currentStudent||{}); return; }
+        const img = new Image();
+        img.onload = () => { templateImage = img; renderStudent(currentStudent||{}); };
+        img.crossOrigin = 'anonymous';
+        img.src = src;
+      }
+      function svgDataUri(str){ return `data:image/svg+xml,${encodeURIComponent(str)}`; }
+
+      function buildHanziBox() {
+        // Single practice box, larger (fills ~92% of canvas)
+        return svgDataUri('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><rect width="800" height="800" fill="white"/><rect x="32" y="32" width="736" height="736" fill="none" stroke="#10b981" stroke-width="6"/><path d="M32 400 H768 M400 32 V768" stroke="#34d399" stroke-width="3"/><path d="M32 32 L768 768 M768 32 L32 768" stroke="#86efac" stroke-width="3" stroke-dasharray="12 12"/></svg>');
+      }
+
+      function buildGraph(kind) {
+        const baseGrid = '<g stroke="#9ca3af" stroke-width="1" opacity="0.7">'+Array.from({length:41},(_,i)=>`<path d="M${i*20} 0 V800"/>`).join('')+Array.from({length:41},(_,i)=>`<path d="M0 ${i*20} H800"/>`).join('')+'</g>';
+        const axesCorner = '<g stroke="#60a5fa" stroke-width="2"><path d="M0 780 H780"/><path d="M20 0 V800"/></g>';
+        const axesCross = '<g stroke="#60a5fa" stroke-width="2"><path d="M0 400 H800"/><path d="M400 0 V800"/></g>';
+        const axes = kind==='corner' ? axesCorner : axesCross;
+        return svgDataUri(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><rect width="800" height="800" fill="white"/>${baseGrid}${axes}</svg>`);
+      }
+
+      function wireHeaderTemplateButtons(){
+        headerHanziBtn?.addEventListener('click', ()=> { templateFit = 0.96; sendTemplate('hanzi', buildHanziBox()); });
+        headerGraphCornerBtn?.addEventListener('click', ()=> sendTemplate('graph_corner', buildGraph('corner')));
+        headerGraphCrossBtn?.addEventListener('click', ()=> sendTemplate('graph_cross', buildGraph('cross')));
+        headerTplClearBtn?.addEventListener('click', ()=> sendTemplate('clear'));
+      }
+      wireHeaderTemplateButtons();
+
+      // Sidebar template buttons removed
     }
 
     startSession();
