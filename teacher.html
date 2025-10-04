@@ -564,7 +564,7 @@
       // If still here after 200ms, user cancelled the navigation
       setTimeout(() => { 
         isLeavingPage = false; 
-        console.log('[SESSION] User cancelled navigation');
+        
       }, 200);
       
       return e.returnValue;
@@ -579,7 +579,7 @@
       
       const handleInteraction = () => {
         overlay.remove();
-        console.log('[SESSION] User interaction registered, beforeunload is now active');
+        
       };
       
       overlay.addEventListener('click', handleInteraction);
@@ -592,7 +592,7 @@
       setTimeout(() => {
         if (overlay.parentNode) {
           overlay.remove();
-          console.log('[SESSION] Interaction overlay removed (timeout)');
+          
         }
       }, 5000);
     });
@@ -601,13 +601,13 @@
     function loadTeacherPrefs(){
       try {
         const saved = localStorage.getItem('teacher_prefs');
-        console.log('[LOAD] Raw localStorage value:', saved);
+        
         if (!saved) {
-          console.log('[LOAD] No saved prefs, using defaults');
+          
           return { color: COLOR_PRESETS[0].value, tool: 'pen', brush: 4, stylusOnly: true, toolbarOnLeft: true };
         }
         const parsed = JSON.parse(saved);
-        console.log('[LOAD] Loaded preferences:', parsed);
+        
         return parsed;
       } catch (e) { 
         console.error('[LOAD] Error loading prefs:', e);
@@ -616,9 +616,9 @@
     }
     function saveTeacherPrefs(prefs){
       try { 
-        console.log('[SAVE] Saving preferences:', prefs);
+        
         localStorage.setItem('teacher_prefs', JSON.stringify(prefs)); 
-        console.log('[SAVE] Saved successfully to localStorage');
+        
       } catch (e) {
         console.error('[SAVE] Error saving prefs:', e);
       }
@@ -629,7 +629,7 @@
     let teacherBrush = prefs.brush;
     let teacherStylusOnly = prefs.stylusOnly;
     let teacherToolbarOnLeft = prefs.toolbarOnLeft;
-    console.log('[INIT] Initial state:', { teacherCurrentColor, teacherCurrentTool, teacherBrush, teacherStylusOnly, teacherToolbarOnLeft });
+    
 
     // ===== Template overlay (sent once, centered) =====
     let templateImage = null; // HTMLImageElement or null
@@ -808,6 +808,20 @@
 
     studentFilter?.addEventListener('input', sortStudentCards);
 
+    const FLAG_OFF_CLASSES = ['border-slate-300', 'bg-slate-100', 'text-slate-400', 'hover:border-slate-400', 'hover:bg-slate-200', 'hover:text-slate-500', 'focus:ring-emerald-200/60'];
+    const FLAG_ON_CLASSES = ['border-rose-300', 'bg-rose-100', 'text-rose-600', 'hover:border-rose-400', 'hover:bg-rose-200', 'hover:text-rose-700', 'focus:ring-rose-200/60'];
+
+    function updateFlagUI(student) {
+      const button = student?.flagBtn;
+      if (!button) return;
+      const flagged = !!student.flagged;
+      button.setAttribute('aria-pressed', flagged ? 'true' : 'false');
+      button.dataset.flagged = flagged ? 'true' : 'false';
+      button.title = flagged ? 'Remove flag' : 'Flag student';
+      FLAG_OFF_CLASSES.forEach(cls => button.classList.toggle(cls, !flagged));
+      FLAG_ON_CLASSES.forEach(cls => button.classList.toggle(cls, flagged));
+    }
+
     function ensureStudent(username) {
       if (students.has(username)) return students.get(username);
 
@@ -839,19 +853,25 @@
             <span class="last-seen text-xs font-medium text-slate-500">—</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
-            <span class="annotation-tick hidden inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-500/20 border border-emerald-500" title="Seen">
-              <svg viewBox="0 0 16 16" class="h-3 w-3 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>
-            </span>
+            <button type="button" class="flag-toggle inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-400 transition hover:border-slate-400 hover:bg-slate-200 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-200/60" aria-pressed="false" title="Flag student">
+              <span class="sr-only">Toggle flag</span>
+              <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M6 3v14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+                <path d="M6.5 4.2h7.2l-2.2 3.3 2.2 3.3H6.5Z"></path>
+              </svg>
+            </button>
             <span class="annotation-seen hidden text-[10px] font-bold uppercase tracking-wide text-emerald-700">Seen</span>
+            <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
           </div>
         </div>
         <div class="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner" style="aspect-ratio:4/3;">
           <canvas class="absolute inset-0 h-full w-full" width="400" height="300"></canvas>
         </div>
-        <button type="button" class="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-200">Open canvas</button>
+        <button type="button" data-action="open-canvas" class="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 focus:outline-none focus:ring-4 focus:ring-emerald-200">Open canvas</button>
       `;
+      const flagBtn = card.querySelector('.flag-toggle');
       const previewElement = card.querySelector('canvas');
+      const openCanvasBtn = card.querySelector('[data-action="open-canvas"]');
       previewElement.replaceWith(previewCanvas);
       card.querySelector('.relative').appendChild(skeleton);
       studentsGrid.appendChild(card);
@@ -865,17 +885,23 @@
         previewCtx,
         card,
         lastSeenEl: card.querySelector('.last-seen'),
-        tickEl: card.querySelector('.annotation-tick'),
         lastSeen: Date.now(),
         annotations: [],
         annotationUndoStack: [],
         annotationRedoStack: [],
-        eraseBatch: null
+        eraseBatch: null,
+        flagBtn,
+        flagged: false
       };
       students.set(username, student);
       studentCountEl.textContent = students.size;
 
-      card.querySelector('button').addEventListener('click', () => openModalForStudent(student));
+      openCanvasBtn?.addEventListener('click', () => openModalForStudent(student));
+      flagBtn?.addEventListener('click', () => {
+        student.flagged = !student.flagged;
+        updateFlagUI(student);
+      });
+      updateFlagUI(student);
 
       const io = new IntersectionObserver((entries)=>{
         entries.forEach(entry=>{
@@ -1054,38 +1080,38 @@
     teacherToolButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         teacherCurrentTool = btn.dataset.tool;
-        console.log('[UI] Tool changed to:', teacherCurrentTool);
+        
         updateTeacherToolButtons();
         saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
       });
     });
-    console.log('[UI] Applying tool buttons, current tool:', teacherCurrentTool);
+    
     updateTeacherToolButtons(); // Apply loaded tool state
 
     // Color palette - apply loaded color
-    console.log('[UI] Applying color selection, current color:', teacherCurrentColor);
+    
     updateTeacherColorSelection(); // Apply loaded color state
 
     // Brush size - apply loaded size and set up listener
     teacherBrushSize.value = teacherBrush;
     teacherSizeDisplay.textContent = teacherBrush;
-    console.log('[UI] Applied brush size:', teacherBrush);
+    
     teacherBrushSize.addEventListener('input', (e) => {
       teacherBrush = parseInt(e.target.value, 10);
       teacherSizeDisplay.textContent = teacherBrush;
-      console.log('[UI] Brush size changed to:', teacherBrush);
+      
       saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
 
     // Stylus toggle - apply loaded state and set up listener
     teacherStylusToggle.classList.toggle('off', !teacherStylusOnly);
     teacherStylusToggle.textContent = teacherStylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
-    console.log('[UI] Applied stylus mode:', teacherStylusOnly, '- Button text:', teacherStylusToggle.textContent);
+    
     teacherStylusToggle.addEventListener('click', () => {
       teacherStylusOnly = !teacherStylusOnly;
       teacherStylusToggle.classList.toggle('off', !teacherStylusOnly);
       teacherStylusToggle.textContent = teacherStylusOnly ? 'Stylus mode (pen only)' : 'All inputs';
-      console.log('[UI] Stylus mode toggled to:', teacherStylusOnly);
+      
       saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
 
@@ -1100,11 +1126,11 @@
         swapTeacherToolbarBtn.textContent = 'Move toolbar to left';
         swapTeacherToolbarBtn.setAttribute('aria-pressed', 'true');
       }
-      console.log('[UI] Toolbar position updated. Left side:', teacherToolbarOnLeft);
+      
     }
     swapTeacherToolbarBtn.addEventListener('click', () => {
       teacherToolbarOnLeft = !teacherToolbarOnLeft;
-      console.log('[UI] Toolbar position toggled to left:', teacherToolbarOnLeft);
+      
       updateTeacherToolbarPosition();
       saveTeacherPrefs({ color: teacherCurrentColor, tool: teacherCurrentTool, brush: teacherBrush, stylusOnly: teacherStylusOnly, toolbarOnLeft: teacherToolbarOnLeft });
     });
@@ -1119,14 +1145,13 @@
       if (activePoints?.length && activeAnnotationStroke) {
         drawSmoothStrokePath(overlayCtx, activePoints, activeAnnotationStroke.color, activeAnnotationStroke.size);
       }
+    }
 
-function markAnnotated(student){
-  try {
-    if(student?.tickEl){ student.tickEl.classList.remove('hidden'); }
-    const seenText = student?.card?.querySelector('.annotation-seen');
-    if(seenText){ seenText.classList.remove('hidden'); }
-  } catch {}
-}
+    function markAnnotated(student){
+      try {
+        const seenText = student?.card?.querySelector('.annotation-seen');
+        if(seenText){ seenText.classList.remove('hidden'); }
+      } catch {}
     }
 
     function getOverlayPoint(ev) {
@@ -1677,7 +1702,7 @@ function markAnnotated(student){
         if (isLeavingPage) {
           try { 
             channel?.send({ type:'broadcast', event:'teacher_end_session', payload:{} });
-            console.log('[SESSION] Sent teacher_end_session to all students'); 
+          
           } catch {}
         }
       });
