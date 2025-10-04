@@ -839,8 +839,11 @@
             <span class="last-seen text-xs font-medium text-slate-500">—</span>
           </div>
           <div class="flex items-center gap-1.5">
-            <span class="annotation-tick hidden inline-block h-2 w-2 rounded-full bg-emerald-600"></span>
             <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
+            <span class="annotation-tick hidden inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-500/20 border border-emerald-500" title="Seen">
+              <svg viewBox="0 0 16 16" class="h-3 w-3 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3 3 7-7"/></svg>
+            </span>
+            <span class="annotation-seen hidden text-[10px] font-bold uppercase tracking-wide text-emerald-700">Seen</span>
           </div>
         </div>
         <div class="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner" style="aspect-ratio:4/3;">
@@ -1118,7 +1121,11 @@
       }
 
 function markAnnotated(student){
-  try { if(student?.tickEl){ student.tickEl.classList.remove('hidden'); } } catch {}
+  try {
+    if(student?.tickEl){ student.tickEl.classList.remove('hidden'); }
+    const seenText = student?.card?.querySelector('.annotation-seen');
+    if(seenText){ seenText.classList.remove('hidden'); }
+  } catch {}
 }
     }
 
@@ -1522,9 +1529,9 @@ function markAnnotated(student){
         if(!isValidEnvelope(payload.env)) return;
         if(!acceptSeq(payload.username, payload.env)) return;
         const student = ensureStudent(payload.username);
-        // Push the current live template state to newcomers
-        if(templateImage && pendingPayload && pendingPayload.kind && pendingPayload.src){
-          try { channel.send({ type:'broadcast', event:'teacher_template', payload:{ target: payload.username, kind: pendingPayload.kind, src: pendingPayload.src } }); } catch {}
+        // Push the current LIVE template (not staged) to newcomers
+        if(templateImage && liveTemplate && liveTemplate.kind && liveTemplate.src){
+          try { channel.send({ type:'broadcast', event:'teacher_template', payload:{ target: payload.username, kind: liveTemplate.kind, src: liveTemplate.src } }); } catch {}
         }
       });
 
@@ -1534,7 +1541,7 @@ function markAnnotated(student){
         try {
           const s = students.get(uname) || ensureStudent(uname);
           const snapshot = (s.strokes || []).map(p=>({ id:p.id, color:p.color, size:p.size, points:p.points }));
-          channel.send({ type:'broadcast', event:'teacher_snapshot', payload:{ target: uname, strokes: snapshot, template: (pendingPayload||null) } });
+          channel.send({ type:'broadcast', event:'teacher_snapshot', payload:{ target: uname, strokes: snapshot, template: (liveTemplate||null) } });
         } catch {}
       });
 
@@ -1681,10 +1688,15 @@ function markAnnotated(student){
         if(currentStudent){ try{ renderStudent(currentStudent);}catch{} }
       }
 
+      let liveTemplate = null; // { kind, src }
+
       function sendTemplate(kind, src){
         if(!channel) return;
+        // Broadcast to students
         channel.send({ type:'broadcast', event:'teacher_template', payload:{ kind, src } });
-        // also reflect in teacher view
+        // Set as current LIVE template (used for newcomers)
+        liveTemplate = kind==='clear' ? null : { kind, src };
+        // Reflect in teacher view
         if(kind==='clear'){ templateImage=null; rerenderAllStudents(); return; }
         const img = new Image();
         img.onload = () => { templateImage = img; rerenderAllStudents(); };
@@ -1694,8 +1706,19 @@ function markAnnotated(student){
       function svgDataUri(str){ return `data:image/svg+xml,${encodeURIComponent(str)}`; }
 
       function buildHanziBox() {
-        // Single practice box, larger (fills ~92% of canvas)
-        return svgDataUri('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800"><rect width="800" height="800" fill="white"/><rect x="32" y="32" width="736" height="736" fill="none" stroke="#10b981" stroke-width="6"/><path d="M32 400 H768 M400 32 V768" stroke="#34d399" stroke-width="3"/><path d="M32 32 L768 768 M768 32 L32 768" stroke="#86efac" stroke-width="3" stroke-dasharray="12 12"/></svg>');
+        // Minimal Hanzi box per provided design: thick green border, dashed green center cross
+        const w=800, h=800, pad=32;
+        const x=pad, y=pad, box=w - pad*2, cx=w/2, cy=h/2;
+        const border = '#059669'; // emerald-600
+        const dashed = '#10b981'; // emerald-500
+        const svg = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+            <rect width="${w}" height="${h}" fill="white"/>
+            <rect x="${x}" y="${y}" width="${box}" height="${box}" fill="none" stroke="${border}" stroke-width="8"/>
+            <path d="M${x} ${cy} H${x+box}" stroke="${dashed}" stroke-width="3" stroke-dasharray="6 6"/>
+            <path d="M${cx} ${y} V${y+box}" stroke="${dashed}" stroke-width="3" stroke-dasharray="6 6"/>
+          </svg>`;
+        return svgDataUri(svg);
       }
 
       function buildGraph(kind) {
@@ -1832,7 +1855,7 @@ function markAnnotated(student){
         // Clear local tiny preview
         if(nextPrevCtx){ nextPrevCtx.fillStyle='#fff'; nextPrevCtx.fillRect(0,0,nextPreview.width,nextPreview.height); }
         
-        // Now send the new mode
+        // Now send the new mode, and set it as LIVE for late joiners
         if(pendingMode==='blank'){ sendTemplate('clear', null); }
         else if(pendingPayload?.kind && pendingPayload?.src){ sendTemplate(pendingPayload.kind, pendingPayload.src); }
         

@@ -48,7 +48,7 @@ Live Drawing Lite is a web-based drawing platform designed for educational envir
 - Three modes:
   1. **Blank Canvas** - Clear workspace
   2. **Templates** - Pre-built grids:
-     - Hanzi grid (Chinese character practice box)
+     - Hanzi grid (red border, dashed center cross)
      - Graph paper (corner alignment)
      - Graph paper (cross alignment)
   3. **Image Mode** - Upload custom images (PNG, JPG, etc.)
@@ -217,6 +217,12 @@ Live Drawing Lite is a web-based drawing platform designed for educational envir
 - ✅ Safari (iPad/Mac)
 - ✅ Firefox
 - ⚠️ Internet Explorer (Not supported)
+
+Confirmed working (Oct 2025):
+- Teacher annotation uses the same stable pointer model as student
+- Student strokes use Bezier smoothing (matches teacher)
+- Undo/redo/clear are ownership‑aware and reliable
+- Refresh protection on teacher with confirmation; students kicked only after confirm
 
 ## 🔧 Technical Architecture
 
