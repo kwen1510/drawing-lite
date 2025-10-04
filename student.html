@@ -354,6 +354,10 @@
     /* ----------------- State ----------------- */
     let sbClient = null;
     let channel = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    let channelConnected = false;
+    let reconnectWatchdogStarted = false;
     let username = '';
     let sessionCode = '';
 
@@ -1031,7 +1035,7 @@
     /* ----------------- Supabase wiring ----------------- */
     function wireTeacherEvents(ch) {
       // Teacher ends session: kick student back to login screen
-      ch.on('broadcast', { event: 'teacher_end_session' }, () => {
+      const handleTeacherEnd = () => {
         // Clear local drawing state and any stored snapshot
         state.strokes = [];
         state.undoStack.length = 0;
@@ -1047,7 +1051,15 @@
         appContainer.classList.add('hidden');
         loginForm.classList.remove('hidden');
         setStatus('connecting', 'Session ended by teacher');
-      });
+        cleanupRealtime();
+        shouldConfirmLeave = false;
+        sessionCode = '';
+        channelConnected = false;
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Join Session';
+        sessionInput.value = '';
+      };
+      ch.on('broadcast', { event: 'teacher_end_session' }, handleTeacherEnd);
       ch.on('broadcast', { event: 'teacher_stroke_end' }, ({ payload }) => {
         if (payload.target !== username) return;
         const s = payload.stroke;
@@ -1171,18 +1183,7 @@
         return;
       }
       sbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      channel = sbClient.channel(`minimal-${sessionCode}`, { config: { broadcast: { ack: false } } });
-      wireTeacherEvents(channel);
-      channel.subscribe(async (st) => {
-        if (st === 'SUBSCRIBED') {
-          setStatus('connected', `Connected as ${username}`);
-          await channel.send({ type:'broadcast', event:'student_ready', payload:{ username, sessionCode, env:{v:1,s:sessionCode,seq:Date.now()} }});
-          // request a fresh snapshot to avoid drift
-          await channel.send({ type:'broadcast', event:'student_sync_request', payload:{ username, env:{v:1,s:sessionCode,seq:Date.now()} }});
-        } else if (st === 'CHANNEL_ERROR') {
-          setStatus('error', 'Connection error');
-        }
-      });
+      await connectChannel();
 
       // Notify teacher on hard refresh/close that this student is leaving
       const sendLeavingAndClear = () => {
@@ -1199,14 +1200,174 @@
       window.addEventListener('pagehide', sendLeavingAndClear);
     }
 
+    function cleanupRealtime() {
+      clearReconnectTimer();
+      reconnectAttempts = 0;
+      channelConnected = false;
+      try { channel?.unsubscribe(); } catch {}
+      try { sbClient?.removeChannel?.(channel); } catch {}
+      try { sbClient?.removeAllChannels?.(); } catch {}
+      try { sbClient?.realtime?.disconnect?.(); } catch {}
+      channel = null;
+      sbClient = null;
+    }
+
+    function clearReconnectTimer(){
+      if (reconnectTimer){
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    }
+
+    async function connectChannel({ reconnecting = false } = {}) {
+      if (!sbClient || !sessionCode) return;
+      if (channel) {
+        try { channel.unsubscribe(); } catch {}
+        try { sbClient.removeChannel?.(channel); } catch {}
+      }
+
+      const statusText = reconnecting ? 'Reconnecting…' : 'Connecting…';
+      setStatus('connecting', statusText);
+
+      channelConnected = false;
+      channel = sbClient.channel(`minimal-${sessionCode}`, { config: { broadcast: { ack: false } } });
+      wireTeacherEvents(channel);
+
+      channel.subscribe(async (st) => {
+        if (st === 'SUBSCRIBED') {
+          clearReconnectTimer();
+          reconnectAttempts = 0;
+          channelConnected = true;
+          setStatus('connected', `Connected as ${username}`);
+          try {
+            await channel.send({ type:'broadcast', event:'student_ready', payload:{ username, sessionCode, env:{v:1,s:sessionCode,seq:Date.now()} }});
+            await channel.send({ type:'broadcast', event:'student_sync_request', payload:{ username, env:{v:1,s:sessionCode,seq:Date.now()} }});
+          } catch (err) {
+            console.error('[RT] Failed to send ready/sync payload:', err);
+          }
+        } else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT') {
+          console.warn('[RT] Channel error, scheduling reconnect:', st);
+          setStatus('error', 'Connection lost — retrying…');
+          channelConnected = false;
+          scheduleChannelReconnect();
+        } else if (st === 'CLOSED') {
+          console.warn('[RT] Channel closed, scheduling reconnect');
+          setStatus('error', 'Connection closed — retrying…');
+          channelConnected = false;
+          scheduleChannelReconnect();
+        }
+      });
+    }
+
+    function scheduleChannelReconnect(forceImmediate = false) {
+      if (!sbClient || !sessionCode) return;
+      if (reconnectTimer) return;
+      if (channelConnected && !forceImmediate) return;
+      if (forceImmediate && channelConnected) return;
+      const attempt = reconnectAttempts + 1;
+      const delay = forceImmediate ? 0 : Math.min(8000, 1000 * Math.pow(2, attempt - 1));
+      reconnectTimer = setTimeout(async () => {
+        reconnectTimer = null;
+        try {
+          await connectChannel({ reconnecting: true });
+        } catch (err) {
+          reconnectAttempts = attempt;
+          console.error('[RT] Reconnect attempt failed:', err);
+          scheduleChannelReconnect();
+        }
+      }, delay);
+      reconnectAttempts = attempt;
+    }
+
+    function beginReconnectWatchdog() {
+      if (reconnectWatchdogStarted) return;
+      reconnectWatchdogStarted = true;
+      window.addEventListener('online', () => {
+        if (!channelConnected) scheduleChannelReconnect(true);
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && !channelConnected) {
+          scheduleChannelReconnect(true);
+        }
+      });
+    }
+
+    async function verifyActiveTeacherSession(code, name) {
+      try {
+        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window;
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+          console.warn('[LOGIN] Missing Supabase configuration; cannot verify session.');
+          return false;
+        }
+        const tempClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const probeId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const probeChannel = tempClient.channel(`minimal-${code}`, { config: { broadcast: { ack: false } } });
+        let settled = false;
+        let timeoutId = null;
+
+        return await new Promise((resolve) => {
+          const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            try { probeChannel.unsubscribe(); } catch {}
+            try { tempClient.removeChannel?.(probeChannel); } catch {}
+            try { tempClient.removeAllChannels?.(); } catch {}
+            try { tempClient.realtime?.disconnect?.(); } catch {}
+            resolve(result);
+          };
+
+          probeChannel.on('broadcast', { event: 'teacher_presence_ack' }, ({ payload }) => {
+            if (payload?.probeId === probeId) {
+              finish(true);
+            }
+          });
+
+          probeChannel.subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+              try {
+                await probeChannel.send({ type: 'broadcast', event: 'teacher_presence_check', payload: { probeId, username: name || null, env: { v: 1, s: code, seq: Date.now() } } });
+              } catch (err) {
+                console.error('[LOGIN] Failed to send presence check:', err);
+                finish(false);
+                return;
+              }
+              timeoutId = setTimeout(() => finish(false), 5000);
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+              finish(false);
+            }
+          });
+        });
+      } catch (error) {
+        console.error('[LOGIN] Error verifying active session:', error);
+        return false;
+      }
+    }
+
     /* ----------------- Login ----------------- */
     async function login() {
-      username = usernameInput.value.trim();
-      sessionCode = sessionInput.value.trim().toUpperCase();
-      if (!username || !sessionCode) {
+      if (loginBtn.disabled) return;
+      const enteredName = usernameInput.value.trim();
+      const enteredCode = sessionInput.value.trim().toUpperCase();
+      if (!enteredName || !enteredCode) {
         alert('Please enter both name and session code');
         return;
       }
+      const originalLabel = loginBtn.textContent;
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Checking session…';
+
+      const isActive = await verifyActiveTeacherSession(enteredCode, enteredName);
+      if (!isActive) {
+        loginBtn.disabled = false;
+        loginBtn.textContent = originalLabel;
+        alert('This session code is not active yet. Ask your teacher to start the session.');
+        return;
+      }
+
+      loginBtn.textContent = 'Joining…';
+      username = enteredName;
+      sessionCode = enteredCode;
       shouldConfirmLeave = true;
       // Persist username for next visit
       try { localStorage.setItem('student_username', username); } catch {}
@@ -1218,6 +1379,7 @@
       });
       loadFromSession();
       await setupSupabase();
+      beginReconnectWatchdog();
     }
     loginBtn.addEventListener('click', login);
     usernameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') login(); });

@@ -145,6 +145,18 @@
             <input id="hideNamesToggle" type="checkbox" class="accent-emerald-600" />
             <span>Hide names</span>
           </label>
+          <button
+            id="flagFilterBtn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-white hover:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            aria-pressed="false"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M6 3v14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+              <path d="M6.5 4.2h7.2l-2.2 3.3 2.2 3.3H6.5Z"></path>
+            </svg>
+            <span>Flagged only</span>
+          </button>
           <div id="gridColumnsWrap" class="relative inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 cursor-pointer shadow-sm transition hover:bg-white/90 hover:border-emerald-300">
             <span>Cards/row:</span>
             <span id="gridColumnsValue" class="ml-1 inline-flex items-center gap-1 font-bold text-emerald-700"><span id="gridColumnsValueNum">3</span>
@@ -236,6 +248,18 @@
           <p class="text-xs font-medium text-slate-500">Use the toolbar to add notes directly onto the student's canvas.</p>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            id="modalFlagBtn"
+            type="button"
+            class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-4 focus:ring-emerald-200"
+            aria-pressed="false"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M6 3v14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"></path>
+              <path d="M6.6 4.4h7l-2.1 3.1 2.1 3.1h-7Z"></path>
+            </svg>
+            <span>Flag</span>
+          </button>
           <button
             id="teacherStylusToggle"
             class="stylus-indicator inline-flex items-center rounded-lg bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-200"
@@ -388,6 +412,7 @@
     const copyUrlBtn = document.getElementById('copyUrlBtn');
     const hideNamesToggle = document.getElementById('hideNamesToggle');
     const studentFilter = document.getElementById('studentFilter');
+    const flagFilterBtn = document.getElementById('flagFilterBtn');
     const gridColumnsWrap = document.getElementById('gridColumnsWrap');
     const gridColumnsValue = document.getElementById('gridColumnsValueNum');
     const gridColumnsSelect = document.getElementById('gridColumnsSelect');
@@ -435,6 +460,7 @@
 
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modalTitle');
+    const modalFlagBtn = document.getElementById('modalFlagBtn');
     const closeModal = document.getElementById('closeModal');
     const bigCanvas = document.getElementById('bigCanvas');
     const bigCtx = bigCanvas.getContext('2d', { alpha: false, desynchronized: true });
@@ -546,6 +572,7 @@
     }
 
     const students = new Map();
+    let showFlaggedOnly = false;
     const activeRemoteStrokes = new Map();
 
     let currentStudent = null;
@@ -553,6 +580,17 @@
     // Always confirm before leaving/refreshing the teacher page
     // Note: Modern browsers require user interaction before beforeunload works
     let isLeavingPage = false;
+    let sessionEnding = false;
+
+    function broadcastSessionEnd(){
+      if(sessionEnding) return;
+      sessionEnding = true;
+      try {
+        channel?.send({ type:'broadcast', event:'teacher_end_session', payload:{} });
+      } catch (err) {
+        console.error('[END] Failed to broadcast session end:', err);
+      }
+    }
     
     window.addEventListener('beforeunload', (e) => {
       // Show confirmation dialog
@@ -564,9 +602,12 @@
       // If still here after 200ms, user cancelled the navigation
       setTimeout(() => { 
         isLeavingPage = false; 
+        sessionEnding = false;
         
       }, 200);
       
+      broadcastSessionEnd();
+
       return e.returnValue;
     });
     
@@ -785,7 +826,11 @@
     function sortStudentCards() {
       const query = (studentFilter?.value || '').trim().toLowerCase();
       const cardsArray = Array.from(students.values())
-        .filter(s => !query || s.username.toLowerCase().includes(query))
+        .filter(s => {
+          const matchesQuery = !query || s.username.toLowerCase().includes(query);
+          const matchesFlag = !showFlaggedOnly || s.flagged;
+          return matchesQuery && matchesFlag;
+        })
         .map(s => ({ username: s.username, card: s.card }))
         .sort((a, b) => {
           const nameA = a.username.toLowerCase();
@@ -807,9 +852,27 @@
     }
 
     studentFilter?.addEventListener('input', sortStudentCards);
+    flagFilterBtn?.addEventListener('click', () => {
+      showFlaggedOnly = !showFlaggedOnly;
+      updateFlagFilterUI();
+      sortStudentCards();
+    });
+    modalFlagBtn?.addEventListener('click', () => {
+      if (!currentStudent) return;
+      currentStudent.flagged = !currentStudent.flagged;
+      updateFlagUI(currentStudent);
+      updateModalFlagUI(currentStudent);
+      if (showFlaggedOnly) {
+        sortStudentCards();
+      }
+    });
 
     const FLAG_OFF_CLASSES = ['border-slate-300', 'bg-slate-100', 'text-slate-400', 'hover:border-slate-400', 'hover:bg-slate-200', 'hover:text-slate-500', 'focus:ring-emerald-200/60'];
     const FLAG_ON_CLASSES = ['border-rose-300', 'bg-rose-100', 'text-rose-600', 'hover:border-rose-400', 'hover:bg-rose-200', 'hover:text-rose-700', 'focus:ring-rose-200/60'];
+    const FLAG_FILTER_OFF_CLASSES = ['border-emerald-200', 'bg-white/80', 'text-slate-700', 'hover:bg-white', 'hover:border-emerald-300', 'focus:ring-emerald-200', 'shadow-sm'];
+    const FLAG_FILTER_ON_CLASSES = ['border-rose-300', 'bg-rose-50', 'text-rose-700', 'hover:bg-rose-100', 'hover:border-rose-400', 'focus:ring-rose-200', 'shadow'];
+    const MODAL_FLAG_OFF_CLASSES = ['border-slate-200', 'bg-white', 'text-slate-600', 'hover:border-rose-300', 'hover:bg-rose-50', 'focus:ring-emerald-200'];
+    const MODAL_FLAG_ON_CLASSES = ['border-rose-300', 'bg-rose-100', 'text-rose-700', 'hover:border-rose-400', 'hover:bg-rose-200', 'focus:ring-rose-200'];
 
     function updateFlagUI(student) {
       const button = student?.flagBtn;
@@ -821,6 +884,26 @@
       FLAG_OFF_CLASSES.forEach(cls => button.classList.toggle(cls, !flagged));
       FLAG_ON_CLASSES.forEach(cls => button.classList.toggle(cls, flagged));
     }
+
+    function updateFlagFilterUI() {
+      if (!flagFilterBtn) return;
+      flagFilterBtn.setAttribute('aria-pressed', showFlaggedOnly ? 'true' : 'false');
+      FLAG_FILTER_OFF_CLASSES.forEach(cls => flagFilterBtn.classList.toggle(cls, !showFlaggedOnly));
+      FLAG_FILTER_ON_CLASSES.forEach(cls => flagFilterBtn.classList.toggle(cls, showFlaggedOnly));
+    }
+
+    function updateModalFlagUI(student) {
+      if (!modalFlagBtn) return;
+      const flagged = !!student?.flagged;
+      modalFlagBtn.setAttribute('aria-pressed', flagged ? 'true' : 'false');
+      modalFlagBtn.dataset.flagged = flagged ? 'true' : 'false';
+      const label = modalFlagBtn.querySelector('span');
+      if (label) label.textContent = flagged ? 'Unflag' : 'Flag';
+      MODAL_FLAG_OFF_CLASSES.forEach(cls => modalFlagBtn.classList.toggle(cls, !flagged));
+      MODAL_FLAG_ON_CLASSES.forEach(cls => modalFlagBtn.classList.toggle(cls, flagged));
+    }
+
+    updateFlagFilterUI();
 
     function ensureStudent(username) {
       if (students.has(username)) return students.get(username);
@@ -847,20 +930,20 @@
       const card = document.createElement('article');
       card.className = 'flex flex-col gap-4 rounded-[24px] border border-slate-200 bg-white/85 p-5 shadow-[0_20px_55px_rgba(30,41,59,0.12)] backdrop-blur';
       card.innerHTML = `
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2 min-w-0">
-            <h3 class="text-lg font-semibold text-slate-900 student-name truncate">${username}</h3>
-            <span class="last-seen text-xs font-medium text-slate-500">—</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button type="button" class="flag-toggle inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-400 transition hover:border-slate-400 hover:bg-slate-200 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-200/60" aria-pressed="false" title="Flag student">
-              <span class="sr-only">Toggle flag</span>
-              <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path d="M6 3v14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
-                <path d="M6.5 4.2h7.2l-2.2 3.3 2.2 3.3H6.5Z"></path>
-              </svg>
-            </button>
-            <span class="annotation-seen hidden text-[10px] font-bold uppercase tracking-wide text-emerald-700">Seen</span>
+        <div class="flex flex-col gap-1">
+          <h3 class="text-lg font-semibold text-slate-900 student-name break-words leading-tight">${username}</h3>
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="last-seen text-xs font-medium text-slate-500">—</span>
+              <span class="annotation-seen hidden text-[10px] font-bold uppercase tracking-wide text-emerald-700">Seen</span>
+              <button type="button" class="flag-toggle inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-400 transition hover:border-slate-400 hover:bg-slate-200 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-200/60" aria-pressed="false" title="Flag student">
+                <span class="sr-only">Toggle flag</span>
+                <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path d="M6 3v14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+                  <path d="M6.5 4.2h7.2l-2.2 3.3 2.2 3.3H6.5Z"></path>
+                </svg>
+              </button>
+            </div>
             <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.25)]" title="Live" aria-label="Live"></span>
           </div>
         </div>
@@ -900,6 +983,12 @@
       flagBtn?.addEventListener('click', () => {
         student.flagged = !student.flagged;
         updateFlagUI(student);
+        if (currentStudent === student) {
+          updateModalFlagUI(student);
+        }
+        if (showFlaggedOnly) {
+          sortStudentCards();
+        }
       });
       updateFlagUI(student);
 
@@ -1046,6 +1135,7 @@
       modal.classList.add('pointer-events-auto');
       updateTeacherColorSelection();
       updateTeacherToolButtons();
+      updateModalFlagUI(student);
     }
 
     function closeModalView() {
@@ -1570,6 +1660,18 @@
         } catch {}
       });
 
+      channel.on('broadcast', { event: 'teacher_presence_check' }, ({ payload }) => {
+        if (!payload) return;
+        if (!isValidEnvelope(payload.env)) return;
+        const probeId = payload.probeId;
+        if (!probeId) return;
+        try {
+          channel.send({ type:'broadcast', event:'teacher_presence_ack', payload:{ probeId, env:{ v:1, s: sessionCode, seq: Date.now() } } });
+        } catch (err) {
+          console.error('[TEACHER] Failed to send presence ack:', err);
+        }
+      });
+
       // Remove student on explicit leave notification
       channel.on('broadcast', { event: 'student_leaving' }, ({ payload }) => {
         const uname = payload?.username;
@@ -1597,11 +1699,19 @@
         templateImage = null;
         activeAnnotationStroke = null;
         // Clear all cached student strokes and annotations locally
+        const hadFlagFilter = showFlaggedOnly;
         students.forEach(st => {
           st.strokes = [];
           st.annotations = [];
           st.annotationUndoStack = [];
           st.annotationRedoStack = [];
+          if (st.flagged) {
+            st.flagged = false;
+            updateFlagUI(st);
+            if (currentStudent === st) {
+              updateModalFlagUI(st);
+            }
+          }
         });
         // Reset any active stroke buffers
         activeRemoteStrokes.clear();
@@ -1609,6 +1719,11 @@
         // Clear modal overlay if open
         try{ overlayCtx.clearRect(0,0,overlay.width, overlay.height); }catch{}
         if(nextPrevCtx){ nextPrevCtx.fillStyle='#fff'; nextPrevCtx.fillRect(0,0,nextPreview.width,nextPreview.height); }
+        if (hadFlagFilter) {
+          showFlaggedOnly = false;
+          updateFlagFilterUI();
+        }
+        sortStudentCards();
       });
 
       channel.on('broadcast', { event: 'student_stroke_start' }, ({ payload }) => {
@@ -1698,13 +1813,13 @@
       
       // Only kick students if page is actually unloading (not just showing confirmation)
       window.addEventListener('pagehide', () => {
-        // pagehide only fires if page is actually unloading (after user confirms)
-        if (isLeavingPage) {
-          try { 
-            channel?.send({ type:'broadcast', event:'teacher_end_session', payload:{} });
-          
-          } catch {}
+        if (isLeavingPage || document.visibilityState === 'hidden') {
+          broadcastSessionEnd();
         }
+      });
+
+      window.addEventListener('unload', () => {
+        broadcastSessionEnd();
       });
 
       // Wire template buttons after channel is live
